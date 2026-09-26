@@ -10,6 +10,7 @@ import {
 import { getProductsByIds, resolveStore, searchProducts } from "@/lib/db";
 import { appUrl } from "@/lib/env";
 import { AppError } from "@/lib/errors";
+import { mdInline } from "@/lib/formats/text";
 import { CAP_SEARCH, toUcpProduct, ucpEnvelope, type UcpMessage } from "@/lib/formats/ucp";
 import { decodeCursor, encodeCursor, MAX_OFFSET } from "./cursor";
 
@@ -83,8 +84,8 @@ export async function catalogSearch(catalog: CatalogSearchInput, opts: { default
 }
 
 export function searchSummary(body: Awaited<ReturnType<typeof catalogSearch>>["body"], catalog: CatalogSearchInput, store: Store | null) {
-  const where = store ? ` in ${store.name ?? store.domain}` : "";
-  const q = catalog.query ? ` for "${catalog.query}"` : "";
+  const where = store ? ` in ${mdInline(store.name ?? store.domain, 80)}` : "";
+  const q = catalog.query ? ` for "${mdInline(catalog.query, 80)}"` : "";
   const more = body.pagination.has_next_page ? ", more available" : "";
   return `Found ${body.pagination.total_count} products${where}${q}; showing ${body.products.length}${more}.`;
 }

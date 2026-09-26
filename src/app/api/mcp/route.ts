@@ -1,5 +1,6 @@
 import { createMcpHandler } from "mcp-handler";
 import { mcpPreflight, withCors } from "@/lib/agent/http";
+import { getRequestId } from "@/lib/http";
 import { registerCheckoutTools } from "@/lib/checkout/mcp-tools"; // WS4: 5 checkout tools + get_order
 import { registerCrawlTools } from "@/lib/crawl/mcp-tools"; // WS2: index_store, get_crawl_status, scan_store, get_scan
 import { instrumentServer } from "@/lib/mcp/instrument"; // WS3: rate limit + agent_requests for every tool
@@ -23,7 +24,7 @@ const handler = createMcpHandler(
 );
 
 async function handle(req: Request): Promise<Response> {
-  return withCors(await handler(req));
+  return withCors(await handler(req), getRequestId(req));
 }
 
 // Stateless Streamable HTTP: GET and DELETE answer 405 from the handler, which clients handle.

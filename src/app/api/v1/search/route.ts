@@ -15,16 +15,19 @@ const list = z
   )
   .pipe(z.array(z.string().max(100)).max(20).optional());
 
+/** "" (an empty form field) means "not set", not 0. */
+const optionalInt = <T extends z.ZodType>(schema: T) => z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
+
 const QuerySchema = z.object({
   q: z.string().trim().max(500).optional(),
   store: z.string().trim().max(255).optional(),
-  min: z.coerce.number().int().min(0).optional(),
-  max: z.coerce.number().int().min(0).optional(),
+  min: optionalInt(z.coerce.number().int().min(0)),
+  max: optionalInt(z.coerce.number().int().min(0)),
   available: z.enum(["true", "false", "any"]).optional(),
   brand: list,
   category: list,
   currency: z.string().length(3).toUpperCase().optional(),
-  limit: z.coerce.number().int().min(1).max(50).optional(),
+  limit: optionalInt(z.coerce.number().int().min(1).max(50)),
   cursor: z.string().max(200).optional(),
 });
 

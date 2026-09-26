@@ -1,5 +1,5 @@
 import { profileCheckout } from "@/lib/agent/checkout-status";
-import { CACHE, ucpLinkHeader } from "@/lib/agent/http";
+import { CACHE, JSON_UTF8, ucpLinkHeader } from "@/lib/agent/http";
 import { logHit } from "@/lib/agent/log";
 import { appUrl } from "@/lib/env";
 import { buildUcpProfile } from "@/lib/formats/ucp";
@@ -11,7 +11,7 @@ export const GET = route("ucp.root", async (req, _ctx: unknown, { requestId }) =
   logHit("ucp", { tool: "root", req });
   return json(buildUcpProfile({ base, checkout: profileCheckout(true) }), {
     requestId,
-    headers: { "Cache-Control": CACHE.index, Link: ucpLinkHeader(`${base}/.well-known/ucp`) },
+    headers: { "Content-Type": JSON_UTF8, "Cache-Control": CACHE.index, Link: ucpLinkHeader(`${base}/.well-known/ucp`) },
   });
 });
 

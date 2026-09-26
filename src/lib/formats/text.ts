@@ -1,6 +1,14 @@
 // src/lib/formats/text.ts  (WS3; pure, isomorphic)
 import type { IndexedProduct, IndexedVariant } from "@/lib/contracts";
 
+const codePoint = (n: number, fallback: string) => {
+  try {
+    return String.fromCodePoint(n);
+  } catch {
+    return fallback;
+  }
+};
+
 export const stripHtml = (h: string) =>
   h
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
@@ -11,6 +19,13 @@ export const stripHtml = (h: string) =>
     .replace(/&gt;/g, ">")
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&quot;/g, '"')
+    .replace(/&rsquo;|&lsquo;/g, "'")
+    .replace(/&rdquo;|&ldquo;/g, '"')
+    .replace(/&ndash;/g, "–")
+    .replace(/&mdash;/g, "—")
+    .replace(/&hellip;/g, "…")
+    .replace(/&#(\d+);/g, (m, d: string) => codePoint(Number(d), m))
+    .replace(/&#x([0-9a-f]+);/gi, (m, h: string) => codePoint(Number.parseInt(h, 16), m))
     .replace(/&amp;/g, "&")
     .replace(/[ \t]+/g, " ")
     .replace(/\n\s*/g, "\n")
@@ -25,3 +40,18 @@ export const plainDescription = (p: Pick<IndexedProduct, "description_text" | "d
 
 export const isAvailable = (v: Pick<IndexedVariant, "offer">) =>
   v.offer.availability === "in_stock" || v.offer.availability === "preorder";
+
+/**
+ * Third-party text (store names, product titles) placed inline in Markdown (llms.txt) or MCP summaries:
+ * one line, no link/code syntax, no leading block markers, bounded length. Stops a crawled page from
+ * injecting headings, fake links or "rules" into our agent-facing files.
+ */
+export const mdInline = (s: string, max = 150) =>
+  truncate(
+    s
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/[\\`*_[\]()<>|]/g, (c) => `\\${c}`)
+      .replace(/^([#>+-])/, "\\$1"),
+    max,
+  );

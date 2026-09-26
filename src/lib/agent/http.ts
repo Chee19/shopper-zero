@@ -13,6 +13,9 @@ export const CACHE = {
   static: "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
 } as const;
 
+/** 03 §6.6: discovery JSON declares its charset (Response.json omits it). */
+export const JSON_UTF8 = "application/json; charset=utf-8";
+
 /** Per-store outputs: never cache while a crawl is filling the index. */
 export const storeCache = (s: Pick<Store, "status">) =>
   s.status === "pending" || s.status === "crawling" ? CACHE.none : CACHE.index;
@@ -21,8 +24,9 @@ export const storeCache = (s: Pick<Store, "status">) =>
 export const ucpLinkHeader = (url: string, version: string = UCP_VERSION) => `<${url}>; rel="ucp"; version="${version}"`;
 
 /** The MCP response is a stream, so re-wrap it with CORS rather than going through json(). */
-export function withCors(res: Response): Response {
+export function withCors(res: Response, requestId?: string): Response {
   const h = new Headers(res.headers);
+  if (requestId) h.set("Request-Id", requestId);
   for (const [k, v] of Object.entries(CORS_HEADERS)) h.set(k, v);
   h.set("Access-Control-Expose-Headers", "Link, Request-Id, Mcp-Session-Id, MCP-Protocol-Version, Retry-After");
   if (!h.has("Cache-Control")) h.set("Cache-Control", "no-store");

@@ -1,5 +1,5 @@
 import { profileCheckout } from "@/lib/agent/checkout-status";
-import { CACHE, ucpLinkHeader } from "@/lib/agent/http";
+import { CACHE, JSON_UTF8, ucpLinkHeader } from "@/lib/agent/http";
 import { logHit } from "@/lib/agent/log";
 import { appUrl } from "@/lib/env";
 import { AppError } from "@/lib/errors";
@@ -14,7 +14,7 @@ export const GET = route("ucp.version", async (req, ctx: RouteContext<"/.well-kn
   logHit("ucp", { tool: "version", req });
   return json(buildUcpProfile({ base, version, checkout: profileCheckout(true) }), {
     requestId,
-    headers: { "Cache-Control": CACHE.index, Link: ucpLinkHeader(`${base}/.well-known/ucp/${version}`, version) },
+    headers: { "Content-Type": JSON_UTF8, "Cache-Control": CACHE.index, Link: ucpLinkHeader(`${base}/.well-known/ucp/${version}`, version) },
   });
 });
 
