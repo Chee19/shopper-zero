@@ -15,10 +15,18 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
   BRAND, SHIPPING, CATEGORIES, PRODUCTS, productById, variantBySku,
-  productPath, categoryPath, fromPrice, inStock as originalInStock,
+  productPath, categoryPath, fromPrice,
 } from './catalog.mjs';
 import { productArt } from './art.mjs';
 import { openOrders, commerceError } from './orders.mjs';
+import { setStockSource, inStock } from './stock.mjs';
+import { resolvePid, productVariation } from './sfcc.mjs';
+import { handleRpc } from './mcp.mjs';
+import { productsJson, toShopifyDetailProduct } from './formats/shopify.mjs';
+import { buildUcpProfile } from './formats/ucp.mjs';
+import { acpFeed, ACP_VERSION } from './formats/acp.mjs';
+import { llmsTxt } from './formats/llms.mjs';
+import { productJsonLd } from './formats/jsonld.mjs';
 
 const MODE = process.env.STORE_MODE === 'after' ? 'after' : 'before';
 const BEFORE = MODE === 'before';
@@ -36,7 +44,7 @@ const AGENT_UA = /bot|agent|headless|python|curl|wget|httpx|node-fetch|undici|ax
 const sessions = new Map(); // sid -> { cart: [{ sku, qty }], checkout: {} }
 const persistent = BEFORE ? null : await openOrders(process.env.PROVENCE_DATA_FILE || '.demo-stores/provence-orders.json', variantBySku);
 const orders = persistent?.orders ?? new Map();
-const inStock = variant => BEFORE ? originalInStock(variant) : persistent.stock(variant.sku) > 0;
+setStockSource(persistent);   // serializers read live stock through stock.mjs
 let orderSeq = 100231;
 
 function session(req, res) {
@@ -109,7 +117,7 @@ function send(res, status, body, type = 'text/html; charset=utf-8', headers = {}
   res.writeHead(status, { 'Content-Type': type, 'X-Demo-Store-Mode': MODE, ...headers });
   res.end(body);
 }
-const json = (res, data, status = 200) => send(res, status, JSON.stringify(data, null, 2), 'application/json; charset=utf-8');
+const json = (res, data, status = 200, headers = {}) => send(res, status, JSON.stringify(data, null, 2), 'application/json; charset=utf-8', headers);
 const redirect = (res, to) => { res.writeHead(302, { Location: to }); res.end(); };
 
 // ---------------------------------------------------------------- layout
@@ -133,6 +141,7 @@ function layout(s, { title, description, head = '', body, scripts = [] }) {
 <title>${esc(title)} | ${BRAND.name}</title>
 <meta name="description" content="${esc(description)}">
 <link rel="stylesheet" href="/static/store.css">
+${BEFORE ? '' : `<link rel="alternate" type="application/x-ndjson" href="${ORIGIN}/feed.acp.jsonl" title="ACP product feed">`}
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f4d23c'/%3E%3Ctext x='16' y='22' font-family='Georgia' font-size='16' text-anchor='middle'%3EL%3C/text%3E%3C/svg%3E">
 ${head}
 </head>
@@ -245,43 +254,6 @@ function returnsText() {
   return `Free returns within ${SHIPPING.returnDays} days of delivery on unopened and gently used items. Start a return from your order confirmation email; we email a prepaid label.`;
 }
 
-function productJsonLd(p) {
-  const shippingDetails = {
-    '@type': 'OfferShippingDetails',
-    shippingRate: { '@type': 'MonetaryAmount', value: SHIPPING.standard, currency: BRAND.currency },
-    shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'US' },
-    deliveryTime: {
-      '@type': 'ShippingDeliveryTime',
-      handlingTime: { '@type': 'QuantitativeValue', minValue: 0, maxValue: 1, unitCode: 'DAY' },
-      transitTime: { '@type': 'QuantitativeValue', minValue: 3, maxValue: 5, unitCode: 'DAY' },
-    },
-  };
-  const returnPolicy = {
-    '@type': 'MerchantReturnPolicy', applicableCountry: 'US',
-    returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
-    merchantReturnDays: SHIPPING.returnDays, returnFees: 'https://schema.org/FreeReturn',
-    returnMethod: 'https://schema.org/ReturnByMail',
-  };
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'ProductGroup',
-    name: p.name, description: p.summary, productGroupID: p.master,
-    brand: { '@type': 'Brand', name: BRAND.name },
-    url: ORIGIN + productPath(p),
-    variesBy: 'https://schema.org/size',
-    aggregateRating: { '@type': 'AggregateRating', ratingValue: p.rating, reviewCount: p.reviews },
-    hasVariant: p.variants.map(v => ({
-      '@type': 'Product', sku: v.sku, name: `${p.name} ${v.size}`, size: v.size,
-      offers: {
-        '@type': 'Offer', url: `${ORIGIN}${productPath(p)}?pid=${v.sku}`,
-        price: v.price.toFixed(2), priceCurrency: BRAND.currency,
-        availability: inStock(v) ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-        itemCondition: 'https://schema.org/NewCondition',
-        shippingDetails, hasMerchantReturnPolicy: returnPolicy,
-      },
-    })),
-  };
-}
 
 function productPage(s, p, pid) {
   const selected = p.variants.find(v => v.sku === pid) || p.variants.find(inStock) || p.variants[0];
@@ -531,46 +503,29 @@ Sitemap: ${ORIGIN}/sitemap_index.xml
 `;
 }
 
-function sitemap() {
-  const urls = ['/en-us/', ...CATEGORIES.map(categoryPath), ...PRODUCTS.map(productPath), '/en-us/delivery-returns.html'];
+
+
+
+/** A real <sitemapindex>. Spec 02 §5.5.4 prefers child sitemaps matching /product/i. */
+function sitemapIndex() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${['/sitemap_0-product.xml', '/sitemap_1-pages.xml'].map(u => `  <sitemap><loc>${ORIGIN}${u}</loc></sitemap>`).join('\n')}
+</sitemapindex>`;
+}
+
+function urlSet(urls) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map(u => `  <url><loc>${ORIGIN}${u}</loc></url>`).join('\n')}
 </urlset>`;
 }
 
-function llmsTxt() {
-  return `# ${BRAND.name}
-
-> Provençal skincare, body care and fragrance. US storefront, prices in USD.
-
-## Shopping
-- Product index (JSON): ${ORIGIN}/products.json
-- Every product page carries schema.org ProductGroup JSON-LD with per-size offers, price, availability, shipping and returns.
-- Deep-link a size with ?pid=<SKU>. Add to bag: POST ${DW}/Cart-AddProduct with pid and quantity.
-- Guest checkout at ${ORIGIN}/en-us/checkout. Agents are allowed on checkout.
-
-## Policies
-- Shipping: ${shippingText()}
-- Returns: ${returnsText()}
-`;
-}
-
-function productsJson() {
-  return {
-    products: PRODUCTS.map(p => ({
-      id: p.master, handle: p.id, title: p.name, vendor: BRAND.name, product_type: p.category,
-      body: p.summary, url: ORIGIN + productPath(p), image: `${ORIGIN}/static/og/${p.id}.svg`,
-      options: [{ name: 'Size', values: p.variants.map(v => v.size) }],
-      variants: p.variants.map(v => ({
-        sku: v.sku, title: v.size, option1: v.size, price: v.price.toFixed(2), currency: BRAND.currency,
-        stock: BEFORE ? v.stock : persistent.stock(v.sku), available: inStock(v), url: `${ORIGIN}${productPath(p)}?pid=${v.sku}`,
-      })),
-    })),
-    shipping: { free_over: SHIPPING.freeThreshold, standard: SHIPPING.standard, express: SHIPPING.express, currency: BRAND.currency },
-    returns: { days: SHIPPING.returnDays, free: true },
-  };
-}
+// Clean .html product URLs only — never `?pid=`, which before-mode's robots.txt
+// disallows. A query string here would fail robots_allows_agents and drop the scan
+// score from 41/D to 38.8/F (see docs/superpowers/specs/2026-09-26-provence-*).
+const productSitemap = () => urlSet(PRODUCTS.map(productPath));
+const pageSitemap = () => urlSet(['/en-us/', ...CATEGORIES.map(categoryPath), '/en-us/delivery-returns.html']);
 
 // ---------------------------------------------------------------- router
 
@@ -600,9 +555,55 @@ async function handle(req, res) {
   if (p.startsWith('/static/')) return serveStatic(res, p.slice('/static/'.length));
   if (p === '/favicon.ico') return send(res, 204, '');
   if (p === '/robots.txt') return send(res, 200, robotsTxt(), 'text/plain; charset=utf-8');
-  if (p === '/sitemap_index.xml') return send(res, 200, sitemap(), 'application/xml');
-  if (p === '/llms.txt') return BEFORE ? send(res, 404, 'Not found', 'text/plain') : send(res, 200, llmsTxt(), 'text/plain; charset=utf-8');
-  if (p === '/products.json') return BEFORE ? send(res, 404, 'Not found', 'text/plain') : json(res, productsJson());
+  if (p === '/sitemap_index.xml') return send(res, 200, sitemapIndex(), 'application/xml');
+  if (p === '/sitemap_0-product.xml') return send(res, 200, productSitemap(), 'application/xml');
+  if (p === '/sitemap_1-pages.xml') return send(res, 200, pageSitemap(), 'application/xml');
+
+  // --- the agent surface: after-mode only, 404 in before-mode.
+  if (p === '/llms.txt') {
+    return BEFORE ? send(res, 404, 'Not found', 'text/plain') : send(res, 200, llmsTxt(), 'text/plain; charset=utf-8');
+  }
+  if (p === '/.well-known/ucp') {
+    return BEFORE ? send(res, 404, 'Not found', 'text/plain') : json(res, buildUcpProfile(), 200, { 'Access-Control-Allow-Origin': '*' });
+  }
+  if (p === '/products.json') {
+    if (BEFORE) return send(res, 404, 'Not found', 'text/plain');
+    const body = productsJson(url.searchParams);
+    if (body.error) return json(res, { errors: body.error }, 400);
+    return json(res, body, 200, { 'Access-Control-Allow-Origin': '*' });
+  }
+  if (p === '/feed.acp.jsonl') {
+    if (BEFORE) return send(res, 404, 'Not found', 'text/plain');
+    const download = url.searchParams.get('download') === '1';
+    return send(res, 200, acpFeed(),
+      download ? 'application/x-ndjson; charset=utf-8' : 'text/plain; charset=utf-8', {
+        'X-ACP-Feed-Version': ACP_VERSION,
+        'Access-Control-Allow-Origin': '*',
+        ...(download ? { 'Content-Disposition': 'attachment; filename="lumiere-de-provence.acp.jsonl"' } : {}),
+      });
+  }
+  if (p === '/api/mcp') {
+    if (BEFORE) return send(res, 404, 'Not found', 'text/plain');
+    if (method !== 'POST') return json(res, { error: 'Use POST with JSON-RPC' }, 405);
+    const rpcBody = await readBody(req);
+    const reply = Array.isArray(rpcBody) ? rpcBody.map(handleRpc).filter(Boolean) : handleRpc(rpcBody);
+    if (!reply || (Array.isArray(reply) && !reply.length)) return send(res, 202, '');
+    return json(res, reply, 200, {
+      'Access-Control-Allow-Origin': '*',
+      ...(req.headers['mcp-session-id'] ? { 'Mcp-Session-Id': req.headers['mcp-session-id'] } : {}),
+    });
+  }
+  {
+    const single = p.match(/^\/products\/([a-z0-9-]+)(\.json|\.js)?$/);
+    if (single) {
+      if (BEFORE) return send(res, 404, 'Not found', 'text/plain');
+      const prod = productById[single[1]];
+      if (!prod) return json(res, { errors: 'Not Found' }, 404);
+      if (single[2] === '.js') return json(res, { errors: 'Not Found' }, 404);   // MVP, spec 03 §6.2
+      if (!single[2]) return redirect(res, productPath(prod));
+      return json(res, { product: toShopifyDetailProduct(prod) }, 200, { 'Access-Control-Allow-Origin': '*' });
+    }
+  }
   if (p === '/__demo/orders') return json(res, { mode: MODE, orders: [...orders.values()].filter(o => !url.searchParams.has('checkout_id') || o.checkout_id === url.searchParams.get('checkout_id')) });
   const cancelMatch = p.match(/^\/__demo\/orders\/(LDP\d+)\/cancel$/);
   if (!BEFORE && cancelMatch && method === 'POST') {
@@ -614,11 +615,10 @@ async function handle(req, res) {
 
   // --- SFCC-style controller endpoints
   if (p === `${DW}/Product-Variation`) {
-    const hit = variantBySku[url.searchParams.get('pid')];
+    const hit = resolvePid(url.searchParams.get('pid'));
     if (!hit) return json(res, { error: true, message: 'Unknown product' }, 404);
     await new Promise(r => setTimeout(r, 350)); // simulated API latency
-    const { variant } = hit;
-    return json(res, { pid: variant.sku, price: { value: variant.price, formatted: money(variant.price), currency: BRAND.currency }, available: inStock(variant), stock: BEFORE ? variant.stock : persistent.stock(variant.sku) });
+    return json(res, productVariation(hit));
   }
   if (p === `${DW}/Search-UpdateGrid`) {
     await new Promise(r => setTimeout(r, 400));
@@ -711,7 +711,9 @@ async function handle(req, res) {
   const cat = CATEGORIES.find(c => p === categoryPath(c) || p === categoryPath(c).slice(0, -1));
   if (cat) return send(res, 200, categoryPage(s, cat));
 
-  const pdp = p.match(/^\/en-us\/([a-z0-9-]+)-([0-9A-Z]+)\.html$/);
+  // Current: /en-us/{slug}/{master}.html — §5.5.4 reads the pid as the last path segment
+  // before .html. Legacy: /en-us/{slug}-{master}.html.
+  const pdp = p.match(/^\/en-us\/([a-z0-9-]+)\/[0-9A-Z]+\.html$/) || p.match(/^\/en-us\/([a-z0-9-]+)-[0-9A-Z]+\.html$/);
   if (pdp && productById[pdp[1]]) return send(res, 200, productPage(s, productById[pdp[1]], BEFORE ? null : url.searchParams.get('pid')));
 
   const stub = { '/en-us/account': 'Sign in', '/en-us/contact': 'Contact us', '/en-us/faq': 'FAQ', '/en-us/our-story': 'Our story', '/en-us/sourcing': 'Sourcing', '/en-us/stores': 'Find a boutique' }[p];

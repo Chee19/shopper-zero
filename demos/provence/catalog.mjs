@@ -186,7 +186,11 @@ export const variantBySku = Object.fromEntries(
   PRODUCTS.flatMap(p => p.variants.map(v => [v.sku, { product: p, variant: v }])),
 );
 
-export const productPath = p => `/en-us/${p.id}-${p.master}.html`;
+// Spec 02 §5.5.4 reads the SFCC pid as the last path segment before `.html`, so the path
+// ends with the master id — as real SFRA URLs do (…/chute-mag/1832001050.html). The old
+// `{slug}-{master}.html` form yielded "shea-hand-cream-01HC150", which is not a pid, and
+// every adapter lookup missed. server.mjs still resolves the legacy form.
+export const productPath = p => `/en-us/${p.id}/${p.master}.html`;
 export const categoryPath = c => `/en-us/${c.id}/`;
 export const fromPrice = p => Math.min(...p.variants.map(v => v.price));
 export const inStock = v => v.stock > 0;

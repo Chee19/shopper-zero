@@ -22,6 +22,7 @@
     "demo:before": "STORE_MODE=before PORT=4001 node demos/provence/server.mjs",
     "demo:after": "STORE_MODE=after PORT=4002 node demos/provence/server.mjs",
     "demo:stores": "node demos/provence/run-both.mjs",
+    "test:demo-store": "node --test demos/provence/__tests__/*.test.mjs",
     "test:browser": "node scripts/test.mjs browser",
     "demo:original": "node scripts/demo/serve-original.mjs",
     "demo:grok": "npm --prefix demos/prototypes/grok run dev -- --host 127.0.0.1 --port 4175",
