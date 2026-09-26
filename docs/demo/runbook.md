@@ -2,7 +2,7 @@
 
 Source: spec 05 §10.1, §10.3, §10.4. Replay routes that always work: `/scan/replay-{api,dom,cu,none}`, `/checkouts/live?replay={spt,handoff}` (always labeled "Replay").
 
-> **While WS4 runs the file-backed mock checkout** (`npm run dev:mock`), checkout events are not in Supabase, so `/checkouts/live` cannot discover a new checkout on its own. Open the `timeline_url` from the checkout (Claude prints "Watch checkout: …/checkouts/{id}"); that page polls `GET /api/v1/checkouts/{id}/events`.
+> **Checkout timeline data path.** `checkout_events` is private (DECISIONS C9), so `/checkouts/{id}` polls the UI-only route `GET /api/v1/ui/checkouts/{id}` every 1.5 s (checkout with PII redacted + events). `/checkouts/live` follow mode needs a "latest checkout" db helper that doesn't exist yet: until then, open the `timeline_url` Claude prints ("Watch checkout: …/checkouts/{id}").
 
 Backup video link (cloud drive): _fill in after the second clean rehearsal_
 
