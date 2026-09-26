@@ -1,7 +1,7 @@
 // src/lib/formats/ucp.ts  (WS3; pure)
 // UCP product shape for MCP + REST catalog outputs (B7, spec 03 §6.4) and UCP discovery profiles (§6.6).
 // Structure mirrors Shopify's live UCP MCP / profile responses. ShoperZero extras live under `_shoperzero`.
-import type { IndexedProduct, IndexedVariant, Money, PaymentRailId, UcpProduct } from "@/lib/contracts";
+import type { IndexedProduct, IndexedVariant, Money, PaymentRailId } from "@/lib/contracts";
 import { PAYMENT_HANDLER_IDS, UCP_SUPPORTED_VERSIONS, UCP_VERSION } from "@/lib/contracts";
 import { cartPermalink } from "./permalink";
 import { isAvailable, plainDescription, truncate } from "./text";
@@ -131,7 +131,8 @@ function ucpOptions(p: IndexedProduct, selected?: SelectedOption[]) {
   }));
 }
 
-export function toUcpProduct(p: IndexedProduct, mode: UcpMode, opts: ToUcpOptions): UcpProduct {
+/** Returns a UcpProduct (00 §6.8); the concrete shape is inferred so callers keep field types. */
+export function toUcpProduct(p: IndexedProduct, mode: UcpMode, opts: ToUcpOptions) {
   const variants = pickVariants(p, mode, opts.variantIds);
   const verified = new Set(opts.verifiedIds ?? []);
   const plain = plainDescription(p);
