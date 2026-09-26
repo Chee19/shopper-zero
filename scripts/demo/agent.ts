@@ -11,7 +11,7 @@ async function main() {
   const client = new Client({ name: "shopperzero-demo-agent", version: "1.0.0" });
   const transcript: { tool: string; result: unknown }[] = [];
   try {
-    await client.connect(new StreamableHTTPClientTransport(new URL("/api/mock/mcp", base)));
+    await client.connect(new StreamableHTTPClientTransport(new URL("/api/mcp", base)));
     async function call(name: string, args: Record<string, unknown>) {
       const result = await client.callTool({ name, arguments: args });
       if (result.isError) throw new Error(JSON.stringify(result.structuredContent ?? result.content));
