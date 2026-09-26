@@ -3,7 +3,7 @@
   const { dw } = window.__store;
   document.querySelectorAll('[data-price-for]').forEach(async el => {
     const r = await fetch(`${dw}/Product-Variation?pid=${el.dataset.priceFor}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-    const d = await r.json();
-    el.textContent = d.price.formatted;
+    const { product: d } = await r.json();
+    el.textContent = d.price.sales.formatted;
   });
 })();

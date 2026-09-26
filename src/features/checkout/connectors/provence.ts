@@ -17,6 +17,15 @@ export class ProvenceRejection extends CheckoutError {
 }
 const feedSchema = z.object({ products: z.array(z.object({ id: z.string(), title: z.string(), url: z.string().url(), image: z.string().url(),
   variants: z.array(z.object({ sku: z.string(), title: z.string(), price: z.string().regex(/^\d+\.\d{2}$/), currency: z.literal("USD"), stock: z.number().int().nonnegative(), url: z.string().url() })) })) });
+const shopifyFeedSchema = z.object({ products: z.array(z.object({
+  handle: z.string().regex(/^[a-z0-9-]+$/), title: z.string(),
+  images: z.array(z.object({ src: z.string().url() })).min(1),
+  variants: z.array(z.object({ sku: z.string().min(1), title: z.string(), price: z.string().regex(/^\d+\.\d{2}$/) })),
+})) });
+const variationSchema = z.object({ product: z.object({
+  id: z.string(), masterId: z.string().min(1), stock: z.number().int().nonnegative(),
+  price: z.object({ sales: z.object({ currency: z.literal("USD"), value: z.number().finite().nonnegative() }) }),
+}) });
 export interface NativeQuote {
   cart: { lines: { sku: string; qty: number; unitPrice: number }[] };
   subtotal_minor: number; shipping: number; tax: number; total: number; total_minor: number;
@@ -56,7 +65,27 @@ export class ProvenceConnector {
   async catalog(): Promise<ProductFixture[]> {
     const { data } = await this.request<unknown>("/products.json");
     const parsed = feedSchema.safeParse(data);
-    if (!parsed.success) throw new CheckoutError("upstream_error", "Lumière’s catalog is unavailable.", 502);
+    if (!parsed.success) {
+      const shopify = shopifyFeedSchema.safeParse(data);
+      if (!shopify.success) throw new CheckoutError("upstream_error", "Lumière’s catalog is unavailable.", 502);
+      // The public Shopify feed omits currency and stock counts. Read both from
+      // the merchant's SFCC controller; keep identities based on its master/SKU.
+      return Promise.all(shopify.data.products.flatMap(p => p.variants.map(async v => {
+        const response = await this.request<unknown>(`${DW}/Product-Variation?pid=${encodeURIComponent(v.sku)}`);
+        const result = variationSchema.safeParse(response.data);
+        if (!result.success || result.data.product.id !== v.sku) {
+          throw new CheckoutError("upstream_error", "Lumière returned invalid variant details.", 502);
+        }
+        const native = result.data.product;
+        const price = Math.round(native.price.sales.value * 100);
+        if (!Number.isSafeInteger(price)) throw new CheckoutError("upstream_error", "Lumière returned an invalid price.", 502);
+        return { id: provenceId("variant", v.sku), product_id: provenceId("product", native.masterId),
+          external_id: v.sku, store_id: PROVENCE_STORE_ID, title: p.title, variant_title: v.title, price, stock: native.stock,
+          domain: new URL(this.origin).host,
+          url: `${this.origin}/en-us/${p.handle}/${encodeURIComponent(native.masterId)}.html?pid=${encodeURIComponent(v.sku)}`,
+          image_url: this.origin + new URL(p.images[0].src).pathname, allowlisted: true };
+      })));
+    }
     return parsed.data.products.flatMap(p => p.variants.map(v => ({ id: provenceId("variant", v.sku), product_id: provenceId("product", p.id),
       external_id: v.sku, store_id: PROVENCE_STORE_ID, title: p.title, variant_title: v.title, price: Number(v.price.replace(".", "")), stock: v.stock,
       domain: new URL(this.origin).host, url: this.origin + new URL(v.url).pathname + new URL(v.url).search,

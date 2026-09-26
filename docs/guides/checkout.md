@@ -9,7 +9,7 @@ npm run demo:provence
 npm run demo:agent
 ```
 
-The launcher starts Lumière before (4001), Lumière after (4002), and checkout (4174), waits for the catalog, and stops its child processes together. Stop any earlier demo occupying these ports first. To use a production build, run `npm run build` and then `npm run demo:provence -- --production`.
+The launcher starts Lumière before (4001), Lumière after (4002), and checkout (4174), waits for the catalog, and stops its child processes together. Stop any earlier demo occupying these ports first. To use a production build, stop the running launcher, run `npm run build`, and then run `npm run demo:provence -- --production`. Restart after each build so the server and browser assets use the same build.
 
 Open http://127.0.0.1:4174/demo/checkout. Select a product, size and quantity; create the checkout, select shipping and confirm. The default is Shea Butter Hand Cream, 75 ml (`01HC075`): $24 + $6.95 shipping + $1.98 tax = $32.93. Express costs $14.95; standard shipping is free from $65. Prices use USD integer cents inside ShopperZero.
 
@@ -33,7 +33,7 @@ REST checkout and order paths are unchanged: `/api/v1/checkouts`, `/api/v1/check
 
 `/api/mock/mcp` exposes catalog helpers and the six checkout/order tools. `/api/mcp` serves the same local assembly; `/api/ucp/mcp` is the composed catalog/crawl/checkout agent surface backed by the shared services. Canonical schemas are in `src/contracts`; the checkout feature adds explicit simulation metadata. `src/infrastructure/mcp/checkout-tools.ts` provides the registrar with its default service; the feature registrar supports injected services.
 
-The `provence_demo` connector uses the storefront's existing cart, shipping and order routes with structured JSON responses. It maps native SKU strings to stable UUIDs. Order creation carries the checkout UUID, simulated payment reference and approved total. Pending authorization is persisted before placement. A timeout retains the pending state; Retry checkout reconciles the merchant record before another purchase. Capture failure cancels the merchant order and releases authorization, including after an interrupted cancellation.
+The `provence_demo` connector uses the storefront's existing cart, shipping and order routes with structured JSON responses. It reads the public Shopify-shaped catalog and checks currency, price and live stock through the native SFCC variant endpoint. Native master IDs and SKU strings map to stable UUIDs, including receipts created before the catalog format changed. Order creation carries the checkout UUID, simulated payment reference and approved total. Pending authorization is persisted before placement. A timeout retains the pending state; Retry checkout reconciles the merchant record before another purchase. Capture failure cancels the merchant order and releases authorization, including after an interrupted cancellation.
 
 ## Scenarios and verification
 
@@ -48,6 +48,6 @@ npm run test:integration
 npm run test:browser
 ```
 
-Integration tests start isolated storefronts and app servers with temporary ledgers. They verify shipping, exact SKU selection, REST/MCP equivalence, simultaneous purchases, idempotency, lost responses, cancellation and restarts. Browser tests exercise the running demo on desktop and mobile, record a video and reject non-local requests.
+Integration tests start isolated storefronts and app servers with temporary ledgers. They verify shipping, exact SKU selection, REST/MCP equivalence, simultaneous purchases, idempotency, lost responses, cancellation and restarts. Browser tests exercise the running demo on desktop and mobile, record a video and reject non-local requests from checkout. They also cover the before/after storefronts and prove that a purchase completed outside the browser updates its open checkout and timeline without reloading. Active checkouts poll once per second; polling stops in terminal states.
 
 This local flow uses UCP-shaped sessions; it does not assert full UCP conformance. The scanner, published catalog and Supabase-backed product UI remain separate workstreams. No live payment integration is part of this demonstration.

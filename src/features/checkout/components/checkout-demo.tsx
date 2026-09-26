@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { CheckoutEvent, CheckoutSession, CheckoutState } from "@/features/checkout/contracts";
@@ -63,14 +63,28 @@ export default function CheckoutDemo({ enabled, initial, catalog = [], catalogEr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(catalogError ?? null);
   const completeKey = useRef<string | null>(null);
-  const refresh = useCallback(async (id: string, next?: CheckoutSession) => {
+  const refresh = useCallback(async (id: string, next?: CheckoutSession, isCurrent: () => boolean = () => true) => {
     const [checkout, timeline, receipt] = await Promise.all([
       next ? Promise.resolve(next) : request<CheckoutSession>(`/api/v1/checkouts/${id}`),
       request<{ events: CheckoutEvent[] }>(`/api/v1/checkouts/${id}/events`),
       request<Proof>(`/api/mock/checkouts/${id}/proof`),
     ]);
-    setSession(checkout); setEvents(timeline.events); setProof(receipt);
+    if (isCurrent()) { setSession(checkout); setEvents(timeline.events); setProof(receipt); }
   }, []);
+  const watchedId = session?.id;
+  const watchedState = session?.state;
+  useEffect(() => {
+    if (!enabled || busy || !watchedId || !watchedState || ["completed", "failed", "expired", "canceled", "handoff"].includes(watchedState)) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try { await refresh(watchedId, undefined, () => !stopped); }
+      catch { /* Preserve the last known state and retry transient read failures. */ }
+      if (!stopped) timer = setTimeout(poll, 1000);
+    };
+    timer = setTimeout(poll, 1000);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [enabled, busy, watchedId, watchedState, refresh]);
   async function action(fn: () => Promise<void>) {
     setBusy(true); setError(null);
     try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : "Unable to complete this step."); }

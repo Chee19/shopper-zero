@@ -135,3 +135,41 @@ test("browser: product size, quantity and shipping select the matching merchant 
     assert.ok(receipt.includes("$92.89")); assert.ok(receipt.includes("30 ml")); verify();
   } finally { await context.close(); }
 });
+
+
+test("browser: a purchase completed externally updates the open checkout and timeline without reload", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 1100 } });
+  const page = await context.newPage(); const verify = await monitor(context, page);
+  try {
+    await page.goto(`${base}/demo/checkout`);
+    const created = await start(page, "success");
+    await page.getByRole("link", { name: "View checkout →", exact: true }).click();
+    await page.waitForURL(`**/checkouts/${created.id}`);
+    await page.getByRole("button", { name: "Confirm purchase · $32.93", exact: true }).waitFor();
+    const response = await context.request.post(`${base}/api/v1/checkouts/${created.id}/complete`, {
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      data: { payment: { instruments: [{ handler_id: "app.shoperzero.stripe_spt", type: "card", credential: { type: "spt", token: "mock_card_visa" } }] } },
+    });
+    assert.equal(response.status(), 200);
+    const done = await response.json(); assert.equal(done.state, "completed");
+    await page.getByRole("heading", { name: "Purchase complete", exact: true }).waitFor({ timeout: 6000 });
+    await page.getByText("Payment captured; order confirmed", { exact: true }).waitFor();
+    assert.ok((await page.getByRole("region", { name: "Order details" }).innerText()).includes(done.order.merchant_order_id));
+    verify();
+  } finally { await context.close(); }
+});
+
+test("browser: mobile purchase produces the matching merchant receipt", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage(); const verify = await monitor(context, page);
+  try {
+    await page.goto(`${base}/demo/checkout`);
+    await start(page, "success");
+    const done = await complete(page); assert.equal(done.state, "completed");
+    await page.getByRole("heading", { name: "Purchase complete", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    const receipt = await (await fetch(done.order.merchant_order_url)).text();
+    assert.ok(receipt.includes(done.order.merchant_order_id)); assert.ok(receipt.includes("75 ml")); assert.ok(receipt.includes("$32.93"));
+    verify();
+  } finally { await context.close(); }
+});

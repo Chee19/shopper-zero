@@ -12,16 +12,16 @@
 
   const xhr = { headers: { 'X-Requested-With': 'XMLHttpRequest' } };
 
-  Promise.all(variants.map(v => fetch(`${dw}/Product-Variation?pid=${v.sku}`, xhr).then(r => r.json())))
+  Promise.all(variants.map(v => fetch(`${dw}/Product-Variation?pid=${v.sku}`, xhr).then(r => r.json()).then(d => d.product)))
     .then(list => {
-      list.forEach(d => { info[d.pid] = d; });
+      list.forEach(d => { info[d.id] = d; });
       render(swatches[0]);
       addBtn.disabled = false;
     });
 
   function render(btn) {
     const d = info[btn.dataset.sku];
-    priceEl.textContent = d.price.formatted;
+    priceEl.textContent = d.price.sales.formatted;
     stockEl.textContent = d.available ? 'In stock' : 'Out of stock';
     stockEl.className = `stock ${d.available ? 'in' : 'out'}`;
   }
