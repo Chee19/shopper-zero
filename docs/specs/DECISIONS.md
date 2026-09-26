@@ -109,6 +109,8 @@ export type ScanReport = {
 | C1 | Catalog URL schemas accept only `http(s)` (`z.url({ protocol: /^https?$/ })`) | `contracts/catalog.ts` |
 | C2 | `proxy()` skips the Supabase session refresh when `NEXT_PUBLIC_UI_MOCK=1` or Supabase env is missing, so mock-mode UI pages render | `src/proxy.ts` |
 | C3 | `normalizeStoreUrl` rejects non-default ports (except 8080/8443) unless `allowPrivate` | `src/lib/slug.ts` |
-| C4 | `parsePrice` reads the first price only, ignores abbreviation dots (`Rs.`), rejects negatives and malformed dot groups | `src/lib/money.ts` |
-| C5 | `variantKey` hashes option values that slugify to "" (non-Latin), so variant ids stay stable across crawls | `src/lib/db/upsert-row.ts` |
+| C4 | `parsePrice` reads the first price only, handles space/apostrophe thousands (`1 299,00 €`, `CHF 1'299.00`), abbreviation dots (`Rs.`) and `$.99`; rejects negatives (incl. `- $5`, `−$5`) and malformed dot groups | `src/lib/money.ts` |
+| C5 | Option-derived variant keys are `opt:<slug>-<hash of raw value>` so non-Latin/symbol differences never collide and ids stay stable across crawls | `src/lib/db/upsert-row.ts` |
 | C6 | Stream stubs (`crawl`, `scan`, `checkout`, `mcp/result`) import `server-only` | stubs |
+| C7 | `DEMO_WALLET_MAX_USD` is empty in `.env.example` (code default `$25`); Next expands `$` in env files, so set it in Vercel/env as `$25` without escaping | `.env.example` |
+| C8 | `test:unit` runs with `--conditions=react-server` so tests can import server-only modules | `package.json` |

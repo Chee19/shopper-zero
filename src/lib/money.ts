@@ -58,11 +58,19 @@ function numberToPlain(n: number): string {
 export function parsePrice(raw: unknown, currency: string): number | null {
   if (typeof raw === "number") return Number.isFinite(raw) && raw >= 0 ? toMinor(raw, currency) : null;
   if (typeof raw !== "string") return null;
-  // First price only ("Sale price$25.00Regular price$30.00" -> "$25.00"); negatives are not prices.
-  const m = raw.match(/\d[\d.,]*/);
-  if (!m || /-[^\w\s]*$/.test(raw.slice(0, m.index))) return null; // "-5", "-$5", "$-5"
+  // First price only ("Sale price$25.00Regular price$30.00" -> "$25.00"). Space/apostrophe-grouped
+  // thousands are matched first: "1 299,00 €", "CHF 1'299.00", "12 500 Kč".
+  const m = raw.match(/\d{1,3}(?:[ \u00a0\u202f'\u2019]\d{3})+(?:[.,]\d+)?|\d[\d.,]*/);
+  if (!m) return null;
+  const before = raw.slice(0, m.index);
+  if (/[-\u2212][^\w]*$/.test(before)) return null; // negatives: "-5", "-$5", "- $5", "−$5", "$-5"
   // Drop separators that belong to text, not the number ("Rs. 1,299.00", "45.00.").
-  let s = m[0].replace(/[.,]+$/, "");
+  let s = m[0].replace(/[ \u00a0\u202f'\u2019]/g, "").replace(/[.,]+$/, "");
+  // A separator right before the digits that isn't an abbreviation dot is a decimal point: "$.99", ".99".
+  if (/[.,]$/.test(before) && !/\p{L}[.,]$/u.test(before)) {
+    if (!/^\d+$/.test(s)) return null;
+    s = `0.${s}`;
+  }
   const lastDot = s.lastIndexOf(".");
   const lastComma = s.lastIndexOf(",");
   if (lastDot >= 0 && lastComma >= 0) {

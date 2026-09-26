@@ -86,6 +86,9 @@ export function route<Ctx>(
         } catch {
           // Response.redirect() / fetch() responses have immutable headers.
           res = new Response(res.body, res);
+          // fetch() already decoded the body; forwarding these would corrupt it.
+          res.headers.delete("content-encoding");
+          res.headers.delete("content-length");
           res.headers.set("Request-Id", requestId);
         }
       }

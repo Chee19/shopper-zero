@@ -30,7 +30,8 @@ test("buildUpsertRow", () => {
   assert.equal(r.row.price, "45.00");
   assert.equal(r.row.available, true);
   assert.equal(r.row.availability, "in_stock");
-  assert.deepEqual(r.row.variants.map((v) => v.external_id), ["opt:s", "opt:m", "opt:m~2"]);
+  assert.deepEqual(r.row.variants.map((v) => v.external_id), [variantKey(base.variants[0] as never), variantKey(base.variants[1] as never), `${variantKey(base.variants[1] as never)}~2`]);
+  assert.match(r.row.variants[0].external_id, /^opt:s-[0-9a-f]{8}$/);
   const again = buildUpsertRow({ ...base, variants: base.variants.map((v) => ({ ...v, offer: { ...v.offer, checked_at: "2026-09-27T00:00:00.000Z" } })) });
   assert.ok(again.ok && again.row.content_hash === r.row.content_hash);
   const bad = buildUpsertRow({ ...base, variants: [] });
@@ -40,8 +41,10 @@ test("buildUpsertRow", () => {
   assert.equal(variantKey({ ...base.variants[0], options: {}, title: "Default Title" } as never), "default");
   const red = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "赤" } } as never);
   const blue = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "青" } } as never);
-  assert.notEqual(red, "opt:");
   assert.notEqual(red, blue);
+  const redM = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "赤", Size: "M" } } as never);
+  const blueM = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "青", Size: "M" } } as never);
+  assert.notEqual(redM, blueM);
   const rows = dedupeHandles([r.row, { ...r.row, url: "https://x.com/other" }, r.row]);
   assert.equal(rows[0].handle, "hoodie");
   assert.match(rows[1].handle, /^hoodie-[0-9a-f]{6}$/);

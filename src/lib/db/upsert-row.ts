@@ -57,8 +57,8 @@ export function variantKey(v: NormalizedVariant): string {
   if (v.external_id) return v.external_id;
   if (v.sku) return `sku:${v.sku}`;
   const optionValues = Object.values(v.options);
-  // Non-Latin values slugify to "", so fall back to a hash to keep keys stable across crawls.
-  const optKey = (x: string) => `opt:${slugify(x) || shortHash(x)}`;
+  // slugify drops non-Latin/symbol characters ("赤 M" and "青 M" both -> "m"), so always add a hash of the raw value.
+  const optKey = (x: string) => `opt:${slugify(x) || "x"}-${shortHash(x)}`;
   if (optionValues.length) return optKey(optionValues.join("-"));
   if (v.title && v.title !== "Default Title") return optKey(v.title);
   return "default";
