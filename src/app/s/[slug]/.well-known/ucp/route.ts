@@ -1,5 +1,5 @@
 import { agentCheckoutFor, profileCheckout } from "@/lib/agent/checkout-status";
-import { storeCache, ucpLinkHeader } from "@/lib/agent/http";
+import { JSON_UTF8, storeCache, ucpLinkHeader } from "@/lib/agent/http";
 import { logHit } from "@/lib/agent/log";
 import { scanInfo } from "@/lib/agent/scan-info";
 import { agentStoreBySlug } from "@/lib/agent/stores";
@@ -20,7 +20,7 @@ export const GET = route("ucp.store", async (req, ctx: RouteContext<"/s/[slug]/.
   logHit("ucp", { tool: "store", storeId: store.id, req });
   return json(scan ? { ...profile, _shoperzero: { scan } } : profile, {
     requestId,
-    headers: { "Cache-Control": storeCache(store), Link: ucpLinkHeader(store.urls.ucp) },
+    headers: { "Content-Type": JSON_UTF8, "Cache-Control": storeCache(store), Link: ucpLinkHeader(store.urls.ucp) },
   });
 });
 

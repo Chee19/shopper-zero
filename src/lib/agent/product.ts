@@ -5,7 +5,7 @@ import { verifyOffer } from "@/lib/crawl";
 import { getProduct, lookupProducts } from "@/lib/db";
 import { appUrl } from "@/lib/env";
 import { AppError } from "@/lib/errors";
-import { isAvailable } from "@/lib/formats/text";
+import { isAvailable, mdInline } from "@/lib/formats/text";
 import {
   CAP_LOOKUP,
   toUcpProduct,
@@ -77,7 +77,7 @@ export function productSummary(body: ProductDetail["body"]): string {
   const store = p._shoperzero.store;
   const v = body.verification;
   const verified = v ? (v.ok ? "; verified live" : "; live check incomplete") : "";
-  return `${p.title} (${store.name ?? store.domain}): ${p.variants.length} variants${verified}.`;
+  return `${mdInline(p.title, 120)} (${mdInline(store.name ?? store.domain, 80)}): ${p.variants.length} variants${verified}.`;
 }
 
 const LOOKUP_VARIANT_CAP = 25;
@@ -92,11 +92,16 @@ export async function lookupCatalog(refs: string[]) {
     const inputs: Record<string, VariantInput[]> = {};
     const tag = (variantId: string, input: VariantInput) => (inputs[variantId] ??= []).push(input);
 
-    const exact = refs.filter((r) => variantIdSet.has(r));
-    const productRefs = refs.filter(
-      (r) => !variantIdSet.has(r) && (r === p.id || r === `${p.store.slug}:${p.seq}` || r === String(p.seq)),
-    );
-    for (const r of exact) tag(r, { id: r, match: "exact" });
+    // uuids resolve case-insensitively in Postgres, so compare lower-cased; tags echo the caller's ref.
+    const variantOf = (r: string) => (variantIdSet.has(r.toLowerCase()) ? r.toLowerCase() : null);
+    const exactRefs = refs.filter((r) => variantOf(r));
+    const exact = exactRefs.map((r) => variantOf(r) as string);
+    const productRefs = refs.filter((r) => {
+      if (variantOf(r)) return false;
+      const lr = r.toLowerCase();
+      return lr === p.id || lr === `${p.store.slug}:${p.seq}`.toLowerCase() || r === String(p.seq);
+    });
+    for (const r of exactRefs) tag(variantOf(r) as string, { id: r, match: "exact" });
 
     let variantIds: string[];
     if (productRefs.length || exact.length === 0) {

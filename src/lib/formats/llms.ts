@@ -4,6 +4,7 @@ import type { IndexedProduct, Platform, Store, StoreSummary } from "@/lib/contra
 import { UCP_VERSION } from "@/lib/contracts";
 import { formatMoney } from "@/lib/money";
 import type { ScanInfo } from "@/lib/agent/scan-info";
+import { mdInline } from "./text";
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
   woocommerce: "WooCommerce",
@@ -46,7 +47,7 @@ export function renderRootLlmsTxt({ base, stats, now, stores, checkoutLive, agen
       const scanSuffix = s.grade_before
         ? ` · scan grade ${s.grade_before}${s.best_method ? ` (best access: ${s.best_method})` : ""}`
         : "";
-      return `- [${s.name ?? s.domain}](${base}/s/${s.slug}/llms.txt): ${s.domain} · ${platformLabel(s.platform)} · ${s.product_count} products · ${checkoutLabel}${scanSuffix}`;
+      return `- [${mdInline(s.name ?? s.domain)}](${base}/s/${s.slug}/llms.txt): ${s.domain} · ${platformLabel(s.platform)} · ${s.product_count} products · ${checkoutLabel}${scanSuffix}`;
     });
 
   return `# ShoperZero
@@ -104,7 +105,7 @@ export interface StoreLlmsInput {
 
 export function renderStoreLlmsTxt({ base, store, products, agentCheckout, scan }: StoreLlmsInput): string {
   const s = store;
-  const name = s.name ?? s.domain;
+  const name = mdInline(s.name ?? s.domain);
   const label = platformLabel(s.platform);
   const storeCheckoutLine = agentCheckout
     ? `Agents can buy headlessly through ShoperZero. create_checkout returns "ready_for_complete"; pay with a Stripe Shared Payment Token or x402 USDC (see payment.handlers).`
@@ -125,7 +126,7 @@ export function renderStoreLlmsTxt({ base, store, products, agentCheckout, scan 
   const productLines = listed.map((p) => {
     const { min, max } = p.price_range;
     const range = max.amount > min.amount ? `${formatMoney(min)}–${formatMoney(max)}` : formatMoney(min);
-    return `- [${p.title}](${base}/s/${s.slug}/products/${p.handle}.json): ${range} · ${p.available ? "in stock" : "out of stock"}`;
+    return `- [${mdInline(p.title)}](${base}/s/${s.slug}/products/${p.handle}.json): ${range} · ${p.available ? "in stock" : "out of stock"}`;
   });
   if (s.product_count > STORE_LLMS_PRODUCTS) {
     productLines.push(`- Full list: [${s.product_count} products](${base}/s/${s.slug}/products.json?limit=250)`);

@@ -4,16 +4,16 @@ import { agentStoreBySlug } from "@/lib/agent/stores";
 import { getProductByHandle } from "@/lib/db";
 import { appUrl } from "@/lib/env";
 import { SHOPIFY_NOT_FOUND, toShopifyDetailProduct } from "@/lib/formats/shopify";
-import { CORS_HEADERS, json, preflight, route } from "@/lib/http";
+import { json, preflight, route } from "@/lib/http";
 
 // Serves /s/{slug}/products/{handle}.json (Next has no partial-segment syntax, so the param keeps ".json").
-// No suffix: a human clicked the link, so redirect to the merchant's product page. ".js" (Shopify AJAX) is stretch.
+// Without the ".json" suffix it is 404 (00 §4.12, which takes precedence over 03 §6.2's 302 to the PDP).
+// ".js" (Shopify AJAX shape) is stretch.
 export const GET = route("s.product_json", async (req, ctx: RouteContext<"/s/[slug]/products/[handle]">, { requestId }) => {
   const { slug, handle: raw } = await ctx.params;
   const notFound = () => json(SHOPIFY_NOT_FOUND, { status: 404, requestId });
-  if (raw.endsWith(".js")) return notFound();
-  const isJson = raw.endsWith(".json");
-  const handle = isJson ? raw.slice(0, -".json".length) : raw;
+  if (!raw.endsWith(".json")) return notFound();
+  const handle = raw.slice(0, -".json".length);
   if (!handle) return notFound();
 
   const store = await agentStoreBySlug(slug);
@@ -21,9 +21,6 @@ export const GET = route("s.product_json", async (req, ctx: RouteContext<"/s/[sl
   const product = await getProductByHandle(store.id, handle);
   if (!product) return notFound();
 
-  if (!isJson) {
-    return new Response(null, { status: 302, headers: { ...CORS_HEADERS, Location: product.url, "Request-Id": requestId } });
-  }
   logHit("products_json", { tool: "product", storeId: store.id, req });
   return json(
     { product: toShopifyDetailProduct(product, store, appUrl()) },
