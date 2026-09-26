@@ -11,8 +11,9 @@ const CHECKOUT_COPY: Record<string, string> = {
   browser: "Browser checkout (experimental)",
 };
 
-export function AgentSurfaces({ store }: { store: Store }) {
-  const u = store.urls;
+/** `mcpUrl` overrides store.urls.mcp: the composed agent server lives at WS3's MCP_PATH (/api/ucp/mcp). */
+export function AgentSurfaces({ store, mcpUrl }: { store: Store; mcpUrl: string }) {
+  const u = { ...store.urls, mcp: mcpUrl };
   const rows: { method: "GET" | "POST"; label: string; url: string; note: string; open: boolean }[] = [
     { method: "GET", label: "products.json", url: u.products_json, note: "Shopify-compatible", open: true },
     { method: "GET", label: "llms.txt", url: u.llms_txt, note: "agent instructions", open: true },

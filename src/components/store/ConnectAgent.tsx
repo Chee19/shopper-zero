@@ -8,8 +8,8 @@ export const TRY_PROMPT =
   "Using ShoperZero, find me a hoodie under $50 across the stores you can see and buy it in size M. Ship to Ada Lovelace, 1 Demo St, San Francisco, CA 94105, US, ada@example.com. Pay with the ShoperZero demo wallet.";
 
 /** Connection snippets. Menu paths, the mcp-remote bridge and the claude CLI flags are UNVERIFIED (spec 05 §13). */
-export function ConnectAgent({ appUrl }: { appUrl: string }) {
-  const mcp = `${appUrl}/api/mcp`;
+export function ConnectAgent({ appUrl, mcpUrl }: { appUrl: string; mcpUrl: string }) {
+  const mcp = mcpUrl;
   const wallet = `${appUrl}/api/demo-wallet/mcp`;
   const desktopConfig = JSON.stringify(
     {

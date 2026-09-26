@@ -26,7 +26,7 @@ export function TopBar({ mcpUrl }: { mcpUrl: string }) {
           </a>
         </nav>
         <div className="ml-auto hidden items-center rounded-full border border-line bg-surface pl-3 md:flex">
-          <code className="font-mono text-[12px] text-ink-2" title={mcpUrl}>…/api/mcp</code>
+          <code className="font-mono text-[12px] text-ink-2" title={mcpUrl}>…{new URL(mcpUrl).pathname}</code>
           <CopyButton text={mcpUrl} label="MCP URL" className="[&>span]:sr-only" />
         </div>
       </div>

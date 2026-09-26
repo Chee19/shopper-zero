@@ -10,7 +10,7 @@ import { StoreHeader } from "@/components/store/StoreHeader";
 import { Card } from "@/components/ui/Card";
 import { Banner, EmptyState } from "@/components/ui/States";
 import { ButtonLink } from "@/components/ui/Button";
-import { appUrl } from "../../_lib/env";
+import { agentMcpUrl, appUrl } from "../../_lib/env";
 import { getStoreView, serverNow } from "../../_lib/queries";
 
 export async function generateMetadata(props: PageProps<"/stores/[slug]">): Promise<Metadata> {
@@ -64,8 +64,8 @@ export default async function StorePage(props: PageProps<"/stores/[slug]">) {
             <Banner tone="bad">The last indexing run failed. Re-scan to try again.</Banner>
           ) : null}
 
-          <AgentSurfaces store={store} />
-          <ConnectAgent appUrl={base} />
+          <AgentSurfaces store={store} mcpUrl={agentMcpUrl()} />
+          <ConnectAgent appUrl={base} mcpUrl={agentMcpUrl()} />
 
           <section aria-labelledby="products">
             <h2 id="products" className="eyebrow mb-3">Products</h2>

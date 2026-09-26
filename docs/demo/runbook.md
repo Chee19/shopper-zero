@@ -2,7 +2,7 @@
 
 Source: spec 05 §10.1, §10.3, §10.4. Replay routes that always work: `/scan/replay-{api,dom,cu,none}`, `/checkouts/live?replay={spt,handoff}` (always labeled "Replay").
 
-> **Checkout timeline data path.** `checkout_events` is private (DECISIONS C9), so `/checkouts/{id}` polls the UI-only route `GET /api/v1/ui/checkouts/{id}` every 1.5 s (checkout with PII redacted + events). `/checkouts/live` follow mode needs a "latest checkout" db helper that doesn't exist yet: until then, open the `timeline_url` Claude prints ("Watch checkout: …/checkouts/{id}").
+> **Checkout timeline data path.** `checkout_events` is private (DECISIONS C9), so `/checkouts/{id}` polls the UI-only route `GET /api/v1/ui/checkouts/{id}` every 1.5 s (checkout with PII redacted + events). `/checkouts/live` follows the newest `checkout_events` row via `GET /api/v1/ui/checkouts/latest`. WS4's file-backed mock checkout doesn't write `checkout_events`, so while it's in use, open the `timeline_url` Claude prints ("Watch checkout: …/checkouts/{id}") instead. Claude connects to the composed agent MCP at `{APP}/api/ucp/mcp` (`/api/mcp` is WS4's mock-only server).
 
 Backup video link (cloud drive): _fill in after the second clean rehearsal_
 
@@ -31,7 +31,7 @@ Backup video link (cloud drive): _fill in after the second clean rehearsal_
 - [ ] The Stripe test mode SPT spike passes. If WS4 fell back, say "SPT-compatible PaymentIntent".
 
 **Agent (T-20)**
-- [ ] **Claude Desktop MCP configured:** "ShoperZero" → `{APP}/api/mcp` and "ShoperZero Demo Wallet" → `{APP}/api/demo-wallet/mcp`. Disable other connectors and web search.
+- [ ] **Claude Desktop MCP configured:** "ShoperZero" → `{APP}/api/ucp/mcp` (the composed agent server; `/api/mcp` is WS4's mock-only one) and "ShoperZero Demo Wallet" → `{APP}/api/demo-wallet/mcp`. Disable other connectors and web search.
 - [ ] A full rehearsal, choosing **"Always allow"** on every tool (**UNVERIFIED** that it persists; if not, narrate over the prompts).
 - [ ] Optional: a Claude Project with the instruction "Use ShoperZero tools to shop; pay by calling wallet_issue_spt with the checkout total and passing the token to complete_checkout."
 - [ ] Fallback agent: WS4's `scripts/agent-*.ts`.

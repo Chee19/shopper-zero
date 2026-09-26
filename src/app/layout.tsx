@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { Footer } from "@/components/site/Footer";
 import { TopBar } from "@/components/site/TopBar";
-import { appUrl } from "./(site)/_lib/env";
+import { agentMcpUrl } from "./(site)/_lib/env";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,7 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} ${instrument.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <TopBar mcpUrl={`${appUrl()}/api/mcp`} />
+        <TopBar mcpUrl={agentMcpUrl()} />
         <main className="flex-1">{children}</main>
         <Footer />
       </body>

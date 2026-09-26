@@ -165,13 +165,16 @@ export function getCheckoutReplay(name: string): CheckoutReplay | null {
   return Object.prototype.hasOwnProperty.call(MOCK_CHECKOUTS, name) ? MOCK_CHECKOUTS[name]! : null;
 }
 
-/**
- * Newest checkout_events row's checkout_id. There is no db helper for it and direct selects are only allowed in WS5
- * client components (spec 00 §4.11), so follow mode resolves the latest checkout in the browser (public read).
- */
+/** Newest checkout_events row's checkout_id (service-role; DECISIONS C9), for /checkouts/live follow mode. */
 export async function getLatestCheckoutId(): Promise<string | null> {
   await connection();
-  return null;
+  if (UI_MOCK) return null;
+  try {
+    const db = await loadDb();
+    return await db.getLatestCheckoutId();
+  } catch {
+    return null;
+  }
 }
 
 /** Request-time clock for relative times in server components (pages call this after their data reads). */
