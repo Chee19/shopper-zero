@@ -8,8 +8,8 @@ import { createServer } from "node:net";
 import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { DEMO_ADDRESS, DEMO_BUYER, DEMO_VARIANT_ID } from "../../src/lib/checkout/fixtures";
-import { PAYMENT_HANDLER_IDS, type CheckoutSession } from "../../src/lib/checkout/contracts";
+import { DEMO_ADDRESS, DEMO_BUYER, DEMO_VARIANT_ID } from "@/features/checkout/demo/fixtures";
+import { PAYMENT_HANDLER_IDS, type CheckoutSession } from "@/features/checkout/contracts";
 
 let directory: string, base: string, child: ChildProcess, output = "";
 const createInput = { line_items: [{ variant_id: DEMO_VARIANT_ID, quantity: 1 }], buyer: DEMO_BUYER, fulfillment: { address: DEMO_ADDRESS } };
@@ -24,7 +24,7 @@ async function freePort() {
 async function start(enabled = true) {
   const port = await freePort(); base = `http://127.0.0.1:${port}`;
   child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(port)], {
-    env: { ...process.env, SHOPPERZERO_MOCK_ENABLED: enabled ? "1" : "0", MOCK_CHECKOUT_DATA_FILE: join(directory, "ledger.json"),
+    env: { ...process.env, CHECKOUT_DEMO_STORE: "fixtures", SHOPPERZERO_MOCK_ENABLED: enabled ? "1" : "0", MOCK_CHECKOUT_DATA_FILE: join(directory, "ledger.json"),
       MOCK_CHECKOUT_APP_URL: base, NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "", SUPABASE_SECRET_KEY: "" },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -112,5 +112,5 @@ test("disabled mock mode fails closed for REST/MCP and displays a clear message"
   assert.equal((await api("/api/mock/checkouts", "POST", { scenario: "success" })).status, 503);
   assert.equal((await api("/api/mcp", "POST", {})).status, 503);
   const page = await (await fetch(`${base}/demo/checkout`)).text();
-  assert.ok(page.includes("Demo is switched off"));
+  assert.ok(page.includes("Checkout unavailable"));
 });

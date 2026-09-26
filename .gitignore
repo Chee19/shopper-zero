@@ -53,3 +53,9 @@ infra/woo/.env.woo
 # Local simulated checkout ledger and generated test evidence
 /.mock-checkout/
 /artifacts/mock-checkout/
+
+# Prototype dependencies/builds and local demo state
+**/node_modules/
+**/dist/
+__MACOSX/
+/.demo-stores/

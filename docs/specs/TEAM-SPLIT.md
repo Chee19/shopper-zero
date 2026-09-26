@@ -10,7 +10,7 @@ The specs define five workstreams (WS1–WS5). Which files each one owns is in [
 | First step | Push contracts, the core migration and db helper stubs by **T+30** (this unblocks everyone) | At T+0, no dependencies: Mock checkout fixtures and simulated Stripe/Woo adapters; no vendor credentials or calls | At T+0, no dependencies: fetch layer, platform detection, and API / JSON-LD probes against the demo store fixtures, as pure modules |
 
 ## Allen: WS1 → WS3 → WS5
-1. **WS1 foundation (01):** package install, `src/lib/contracts/**`, the core migration and seed, `src/lib/db/**`, the proxy matcher, `.env.example`, and `infra/woo/.env.woo` in `.gitignore`. Push by T+30, then freeze the contracts.
+1. **WS1 foundation (01):** package install, `src/contracts/**`, the core migration and seed, `src/infrastructure/database/**`, the proxy matcher, `.env.example`, and `infra/woo/.env.woo` in `.gitignore`. Push by T+30, then freeze the contracts.
 2. **WS3 agent surface (03):** `/api/mcp` (catalog tools, plus composing Chee19's crawl registrar and Pierre's checkout registrar), `products.json`, `llms.txt`, `/.well-known/ucp`, the REST read API.
 3. **WS5 web UI (05):** landing → `/scan/{id}` live cascade → score report → "Make it agent-ready" → store page; checkout timeline; `/bot`; claim flow; demo runbook.
 
@@ -20,14 +20,14 @@ The specs define five workstreams (WS1–WS5). Which files each one owns is in [
 3. **Stretch:** the `browser` connector that replays the scan's `dom_recipe`.
 
 ## Chee19: WS2
-1. **Before T+30 (pure modules, no DB):** `src/lib/crawl/fetch.ts` and `detect.ts`, the platform adapters, the sitemap and JSON-LD parsers.
-2. **Scan & score (02 §6):** `src/lib/scan/**`, covering the `api` probe, the `dom` probe with its recipe, `score.ts` and `run.ts`, then `POST`/`GET /api/v1/scans`. The `computer_use` probe comes last.
+1. **Before T+30 (pure modules, no DB):** `src/features/crawl/fetch.ts` and `detect.ts`, the platform adapters, the sitemap and JSON-LD parsers.
+2. **Scan & score (02 §6):** `src/features/scan/**`, covering the `api` probe, the `dom` probe with its recipe, `score.ts` and `run.ts`, then `POST`/`GET /api/v1/scans`. The `computer_use` probe comes last.
 3. **Indexing:** `crawlStore`, `POST /api/v1/stores`, crawl-run progress, `verifyOffer`, then `registerCrawlTools` (`index_store`, `get_crawl_status`, `scan_store`, `get_scan`).
 
 ## Hand-offs between people
 | From → To | What | When |
 |---|---|---|
-| Allen → everyone | `src/lib/contracts/**`, db helper stubs, migration | T+30 |
+| Allen → everyone | `src/contracts/**`, db helper stubs, migration | T+30 |
 | Chee19 → Allen | `POST /api/v1/scans` + Realtime writes to `scans` (the UI's scan page), `registerCrawlTools` | ~T+2h |
 | Chee19 → Pierre | Woo `variant.external_id` = Store API purchasable id (B9); `stores.best_method` / `dom_recipe` | with the Woo adapter |
 | Pierre → Allen | `registerCheckoutTools`, `checkout_events` writes (checkout timeline) | ~T+2h |

@@ -1,5 +1,5 @@
-import { getMockService } from "@/lib/checkout/runtime";
-import { body, context, route } from "@/lib/checkout/http";
+import { getMockService } from "@/features/checkout/runtime";
+import { body, context, route } from "@/features/checkout/http";
 export async function POST(request: Request) {
   return route(async () => getMockService().createCheckout(await body(request), context(request)), 201);
 }

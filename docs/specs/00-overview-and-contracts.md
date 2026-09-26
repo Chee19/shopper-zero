@@ -12,8 +12,8 @@ Stripe test payments are the only payment rail. See DECISIONS.md for the current
 
 `docs/specs/DECISIONS.md` is binding and overrides any text here that disagrees with it. This file folds it in as follows:
 
-- **Scan and score (DECISIONS §A).** New contract file `src/lib/contracts/scan.ts` (§6.5a), exported from the barrel. `Store` gains `best_method`, `dom_recipe`, `latest_scan_id` (and `claimed_at`, WS5 CCR-8). New `scans` table, `stores` columns and the public `scan-screenshots` storage bucket (spec 01 §4). New routes `POST /api/v1/scans`, `GET /api/v1/scans/{id}` and MCP tools `scan_store`, `get_scan` (all WS2). New env vars (§4.7). The demo now opens with scan and score (§2).
-- **Ownership (B1, B4, WS3 CR-3, WS5 CCR-9).** WS2 owns `src/lib/scan/**`, `src/app/api/v1/scans/**`, and both `GET` and `POST` in `src/app/api/v1/stores/route.ts`. Registrars are per stream and `/api/mcp` composes them behind WS3's `instrumentServer` (§3.3, §6.9).
+- **Scan and score (DECISIONS §A).** New contract file `src/contracts/scan.ts` (§6.5a), exported from the barrel. `Store` gains `best_method`, `dom_recipe`, `latest_scan_id` (and `claimed_at`, WS5 CCR-8). New `scans` table, `stores` columns and the public `scan-screenshots` storage bucket (spec 01 §4). New routes `POST /api/v1/scans`, `GET /api/v1/scans/{id}` and MCP tools `scan_store`, `get_scan` (all WS2). New env vars (§4.7). The demo now opens with scan and score (§2).
+- **Ownership (B1, B4, WS3 CR-3, WS5 CCR-9).** WS2 owns `src/features/scan/**`, `src/app/api/v1/scans/**`, and both `GET` and `POST` in `src/app/api/v1/stores/route.ts`. Registrars are per stream and `/api/mcp` composes them behind WS3's `instrumentServer` (§3.3, §6.9).
 - **Contract changes (B5, B7, B9, B11, B14, WS4 CCR-W4-8).** `CheckoutEventData` (§6.6); `timeline_url` message code; `CrawlLogEntry` is `{at, step?, level, msg, data?}` (capped at 50); MCP/REST catalog outputs use the UCP product shape (`?format=indexed` for `IndexedProduct`); `get_product` accepts `catalog.selected`; Woo id mapping is pinned (§4.2). `CheckoutState` already had `handoff` and `quote()` already took `QuoteInput`.
 - **db helpers (B12, 02 §15.3).** Adds `rowToStore`, `findProducts`, `getIndexStats`, `getScan`, `upsertScan`, `claimScan`, `getLatestScanForStore`, `getActiveScanForStore`, `countActiveScans`, `supersedeScans`, `uploadScanScreenshot`, `claimCrawlRun`, `getActiveCrawlRun`, `countActiveCrawlRuns`, `getVariantForVerify`, `getOrCreateClaim`, and WS2 CCR-1's `upsertStoreProducts` semantics (variants are never deleted, per-product failures are reported, unchanged products are skipped) (§6.10).
 - **Error envelope (B11).** Unchanged: `{error: {code, message, details?}}` with the §4.4 code table. Stream-specific reasons go in `details.reason` (§4.4).
@@ -60,7 +60,7 @@ Stripe test payments are the only payment rail. See DECISIONS.md for the current
 ├── scripts/agent-*.ts                       (WS4)
 ├── scripts/crawl-*.ts, scripts/scan-*.ts    (WS2)
 ├── infra/fixtures/js-shop/                  (WS2: JS-only shop for the browser probes)
-├── scripts/db-smoke.ts                      (WS1)
+├── scripts/db/smoke.ts                      (WS1)
 ├── supabase/
 │   ├── config.toml                          (WS1)
 │   ├── seed.sql                             (WS1)
@@ -119,39 +119,39 @@ Stripe test payments are the only payment rail. See DECISIONS.md for the current
 
 | Stream | Owns |
 |---|---|
-| **WS1** Foundation | `supabase/migrations/20260926010000_core.sql` (incl. `scans`, the `stores` scan columns and the `scan-screenshots` bucket), `src/lib/contracts/**` (incl. `scan.ts`), `src/lib/db/**` (typed repo functions, full list in §6.10: `upsertStoreProducts`, `getProduct`, `findProducts`, `searchProducts`, `getStoreBySlug`, `getStoreById`, `rowToStore`, `listStores`, `listStoreProducts`, `getLatestCrawlRun`, `getIndexStats`, `getScan`, `upsertScan`, `getLatestScanForStore`, `logAgentRequest`…), `src/lib/money.ts`, `src/lib/slug.ts`, `src/proxy.ts` (matcher only), `.env.example`, `supabase/seed.sql` |
-| **WS2** Ingestion + scan | `infra/fixtures/js-shop/**`, `src/lib/crawl/**` (`fetch.ts` polite fetch + robots, `detect.ts`, `adapters/{woocommerce,magento,squarespace,sfcc,shopify}.ts`, `sitemap.ts`, `jsonld.ts`, `normalize.ts`, `run.ts`, `mcp-tools.ts`), **`src/lib/scan/**`** (`probes/api.ts`, `probes/dom.ts`, `probes/computer-use.ts`, `score.ts`, `run.ts`; `computer-use.ts` can be handed to a third person), `src/lib/readiness/**`, `src/app/api/v1/stores/route.ts` (**GET and POST**), `src/app/api/v1/crawl-runs/**`, **`src/app/api/v1/scans/**`**, `scripts/crawl-*.ts`, `scripts/scan-*.ts` |
-| **WS3** Agent surface | `src/app/api/mcp/route.ts` (composes the registrars), `src/lib/mcp/**` (`result.ts`, `types.ts`, `instrument.ts`, `instructions.ts`, `tools/catalog.ts`), `src/lib/agent/**`, `src/app/api/v1/{search,products}/**`, `src/app/api/v1/stores/[slug]/route.ts`, `src/app/s/[slug]/**` (route handlers: `products.json`, `products/[handle].json`, `feed.acp.jsonl`, `llms.txt`, `.well-known/ucp`), `src/app/llms.txt/`, `src/app/.well-known/**` (incl. `ucp/[version]`), `src/app/openapi.json/`, `src/app/robots.ts`, `src/lib/formats/{shopify,ucp,acp,llms,permalink,openapi,agent-card,text}.ts` (serializers from `IndexedProduct`) |
-| **WS4** Checkout & payments | `src/lib/checkout/**` (`service.ts`, `state.ts` with `transition()`, `connectors/{index,woo,handoff}.ts` incl. `resolveCheckoutConnector()`, `mcp-tools.ts`), `src/lib/payments/**` (`stripe.ts` using `fetch` + a `Stripe-Version` header for preview endpoints), `src/app/api/v1/checkouts/**`, `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`, `infra/woo/` (`docker-compose.woo.yml`, setup script), `scripts/agent-*.ts`, `supabase/migrations/20260926024000_ws4_checkout.sql` |
+| **WS1** Foundation | `supabase/migrations/20260926010000_core.sql` (incl. `scans`, the `stores` scan columns and the `scan-screenshots` bucket), `src/contracts/**` (incl. `scan.ts`), `src/infrastructure/database/**` (typed repo functions, full list in §6.10: `upsertStoreProducts`, `getProduct`, `findProducts`, `searchProducts`, `getStoreBySlug`, `getStoreById`, `rowToStore`, `listStores`, `listStoreProducts`, `getLatestCrawlRun`, `getIndexStats`, `getScan`, `upsertScan`, `getLatestScanForStore`, `logAgentRequest`…), `src/shared/money.ts`, `src/shared/slug.ts`, `src/proxy.ts` (matcher only), `.env.example`, `supabase/seed.sql` |
+| **WS2** Ingestion + scan | `infra/fixtures/js-shop/**`, `src/features/crawl/**` (`fetch.ts` polite fetch + robots, `detect.ts`, `adapters/{woocommerce,magento,squarespace,sfcc,shopify}.ts`, `sitemap.ts`, `jsonld.ts`, `normalize.ts`, `run.ts`, `mcp-tools.ts`), **`src/features/scan/**`** (`probes/api.ts`, `probes/dom.ts`, `probes/computer-use.ts`, `score.ts`, `run.ts`; `computer-use.ts` can be handed to a third person), `src/features/scan/readiness/**`, `src/app/api/v1/stores/route.ts` (**GET and POST**), `src/app/api/v1/crawl-runs/**`, **`src/app/api/v1/scans/**`**, `scripts/crawl-*.ts`, `scripts/scan-*.ts` |
+| **WS3** Agent surface | `src/app/api/mcp/route.ts` (composes the registrars), `src/infrastructure/mcp/**` (`result.ts`, `types.ts`, `instrument.ts`, `instructions.ts`, `tools/catalog.ts`), `src/features/catalog/**`, `src/app/api/v1/{search,products}/**`, `src/app/api/v1/stores/[slug]/route.ts`, `src/app/s/[slug]/**` (route handlers: `products.json`, `products/[handle].json`, `feed.acp.jsonl`, `llms.txt`, `.well-known/ucp`), `src/app/llms.txt/`, `src/app/.well-known/**` (incl. `ucp/[version]`), `src/app/openapi.json/`, `src/app/robots.ts`, `src/features/catalog/formats/{shopify,ucp,acp,llms,permalink,openapi,agent-card,text}.ts` (serializers from `IndexedProduct`) |
+| **WS4** Checkout & payments | `src/features/checkout/**` (`service.ts`, `state.ts` with `transition()`, `connectors/{index,woo,handoff}.ts` incl. `resolveCheckoutConnector()`, `mcp-tools.ts`), `src/features/checkout/payments/**` (`stripe.ts` using `fetch` + a `Stripe-Version` header for preview endpoints), `src/app/api/v1/checkouts/**`, `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`, `infra/woo/` (`docker-compose.woo.yml`, setup script), `scripts/agent-*.ts`, `supabase/migrations/20260926024000_ws4_checkout.sql` |
 | **WS5** Web UI & demo | `src/app/page.tsx` (scan-first landing), `src/app/(site)/**` (incl. `/scan/[id]` live cascade + score report, `/bot`), `src/components/**`, `src/app/layout.tsx`/`globals.css`, `src/app/api/v1/claims/**`, `src/app/api/v1/ui/**` (UI-only helpers, not in `openapi.json`), `docs/demo/**`, `mock/` |
 
 ### 3.3 Clarifications to the map (binding)
 
-1. **WS1 also owns** the new shared helpers `src/lib/errors.ts`, `src/lib/http.ts`, `src/lib/log.ts`, `src/lib/env.ts`, plus `scripts/db-smoke.ts`. It is the gatekeeper for `package.json`, `next.config.ts`, `tsconfig.json`, `supabase/config.toml` and `src/lib/supabase/**`.
+1. **WS1 also owns** the new shared helpers `src/shared/errors.ts`, `src/shared/http.ts`, `src/shared/log.ts`, `src/shared/env.ts`, plus `scripts/db/smoke.ts`. It is the gatekeeper for `package.json`, `next.config.ts`, `tsconfig.json`, `supabase/config.toml` and `src/infrastructure/supabase/**`.
 2. **MCP registrars live with the stream that owns the logic (B4).** The MCP route (WS3) only composes registrars, all behind WS3's `instrumentServer(server)`:
-   - `registerCatalogTools` in `src/lib/mcp/tools/catalog.ts` (WS3): `list_stores`, `search_catalog`, `lookup_catalog`, `get_product`.
-   - `registerCrawlTools` in `src/lib/crawl/mcp-tools.ts` (WS2): `index_store`, `get_crawl_status`, `scan_store`, `get_scan`. The tool schemas WS3 wrote in round 1 move verbatim into spec 02.
-   - `registerCheckoutTools` in `src/lib/checkout/mcp-tools.ts` (WS4): `create_checkout`, `update_checkout`, `get_checkout`, `complete_checkout`, `cancel_checkout`, `get_order`. WS3 never registers `get_order` itself (a duplicate name throws at startup).
-   - `registerDemoWalletTools` in `src/lib/payments/demo-wallet-tools.ts` (WS4), mounted only on `/api/demo-wallet/mcp`.
-   - `instrumentServer(server)` in `src/lib/mcp/instrument.ts` (WS3) runs **first** and wraps every `registerTool` call from all three registrars. It is the **only** place MCP tool calls are logged to `agent_requests` (and rate-limited). WS2 and WS4 registrars must not call `logAgentRequest` themselves. REST routes still log themselves.
+   - `registerCatalogTools` in `src/infrastructure/mcp/tools/catalog.ts` (WS3): `list_stores`, `search_catalog`, `lookup_catalog`, `get_product`.
+   - `registerCrawlTools` in `src/features/crawl/mcp-tools.ts` (WS2): `index_store`, `get_crawl_status`, `scan_store`, `get_scan`. The tool schemas WS3 wrote in round 1 move verbatim into spec 02.
+   - `registerCheckoutTools` in `src/features/checkout/mcp-tools.ts` (WS4): `create_checkout`, `update_checkout`, `get_checkout`, `complete_checkout`, `cancel_checkout`, `get_order`. WS3 never registers `get_order` itself (a duplicate name throws at startup).
+   - `registerDemoWalletTools` in `src/features/checkout/payments/demo-wallet-tools.ts` (WS4), mounted only on `/api/demo-wallet/mcp`.
+   - `instrumentServer(server)` in `src/infrastructure/mcp/instrument.ts` (WS3) runs **first** and wraps every `registerTool` call from all three registrars. It is the **only** place MCP tool calls are logged to `agent_requests` (and rate-limited). WS2 and WS4 registrars must not call `logAgentRequest` themselves. REST routes still log themselves.
 
-   This supersedes the synthesis line "checkout tools delegating to WS4's service" in `src/lib/mcp/**`. Registrar type: `ToolRegistrar` in `src/lib/mcp/types.ts` (see §6.9).
+   This supersedes the synthesis line "checkout tools delegating to WS4's service" in `src/infrastructure/mcp/**`. Registrar type: `ToolRegistrar` in `src/infrastructure/mcp/types.ts` (see §6.9).
 3. **`src/app/api/v1/stores/route.ts` is one file (B1).** WS2 owns it and implements **both** `POST` (submit) and `GET` (list). WS3 does not touch it. GET is a thin call to `db.listStores()` that returns `{ stores: StoreSummary[] }`, the same body as the `list_stores` MCP tool. POST accepts `{ url }` **or** `{ store_id }`, plus `force?: boolean`. It reuses the store's latest scan to pick the indexing method (DECISIONS §A), returns **200** with `IndexStoreResult` (`cached: true`) when the store is `indexed`, was crawled less than 6 h ago and `!force`, and otherwise **202** with `IndexStoreResult` (`{ store, crawl_run_id, status, reused, cached }`, WS5 CCR-3 + 02 §15). A store reachable by computer use only returns **422** `unprocessable`.
 3a. **Scan routes (DECISIONS §A).** `POST /api/v1/scans` `{ url, mode? }` → **202** `ScanStartResult` `{ scan_id, store_id, status_url, report_url }` (the scan runs in `after()`; `maxDuration = 300`). `GET /api/v1/scans/{id}` → `ScanReport`. Both WS2. The UI follows the scan via Realtime on `scans`. After a scan, indexing maps `best_method` `api` → platform adapter and `dom` → sitemap + JSON-LD / DOM recipe. `computer_use` does not index a catalog: the store is marked reachable by computer use only.
 3b. **Checkout connector choice (B10).** Everyone calls `resolveCheckoutConnector(store)` from `@/lib/checkout/connectors` (WS4) to compute `stores.checkout_connector` and `IndexedProduct.checkout_methods`. Only allowlisted Woo stores get `woo_store_api`; all others get `handoff`. The checkout service always resolves again, so `stores.checkout_connector` is display only.
 4. **T+30 stub files.** In the contracts commit, WS1 creates compile-ready stubs in other streams' directories so every import path exists from T+30. Ownership passes to the named stream the moment the commit lands. Owners replace the bodies and keep the exported names and types.
-   - `src/lib/crawl/index.ts` → WS2
-   - `src/lib/crawl/mcp-tools.ts` → WS2
-   - `src/lib/scan/index.ts` → WS2
-   - `src/lib/checkout/index.ts` → WS4
-   - `src/lib/checkout/mcp-tools.ts` → WS4
-   - `src/lib/mcp/result.ts`, `src/lib/mcp/types.ts` → WS3
+   - `src/features/crawl/index.ts` → WS2
+   - `src/features/crawl/mcp-tools.ts` → WS2
+   - `src/features/scan/index.ts` → WS2
+   - `src/features/checkout/index.ts` → WS4
+   - `src/features/checkout/mcp-tools.ts` → WS4
+   - `src/infrastructure/mcp/result.ts`, `src/infrastructure/mcp/types.ts` → WS3
 
    Stub code is in spec 01 §3.
 
 ### 3.4 Shared-file rules
 
-- **Contracts are frozen after T+30.** Change `src/lib/contracts/**` only additively (a new optional field, a new type), with a heads-up in the team channel **before** pushing. Renaming or removing anything needs agreement from every stream that imports it.
+- **Contracts are frozen after T+30.** Change `src/contracts/**` only additively (a new optional field, a new type), with a heads-up in the team channel **before** pushing. Renaming or removing anything needs agreement from every stream that imports it.
 - **Migrations are add-only (B15).** Never edit a migration that has been pushed, including `20260926010000_core.sql` once it's pushed. Streams may add their own migrations with later timestamps, `supabase/migrations/2026092602xxxx_<stream>_<what>.sql` (e.g. WS4's `20260926024000_ws4_checkout.sql`), and never edit the core one. `agent_requests.agent_profile` is now in core, so WS3 does not need its `20260926025000_ws3_agent_requests.sql` (if kept, it must use `add column if not exists`). Every new table must:
   - enable RLS;
   - `grant all ... to service_role`;
@@ -169,7 +169,7 @@ Stripe test payments are the only payment rail. See DECISIONS.md for the current
 
 ### 4.1 Money
 - **Integer minor units everywhere**: `Money = { amount: number /* int */, currency: "USD" }`. This covers the DB (`*_minor bigint`), contracts, MCP and REST.
-- Convert only at the edges, with `src/lib/money.ts`:
+- Convert only at the edges, with `src/shared/money.ts`:
   - `parsePrice` / `toMinor` / `rescaleMinor` when ingesting;
   - `fromMinor` for Shopify `"25.00"` strings;
   - `acpPrice` for `"25.00 USD"`;
@@ -196,12 +196,12 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 
 ### 4.3 Timestamps
 - The DB uses `timestamptz` everywhere, defaulting to `now()`. `updated_at` is maintained by triggers (`public.set_updated_at()`).
-- APIs emit ISO 8601 UTC with milliseconds (`new Date(x).toISOString()`, e.g. `2026-09-26T10:00:00.000Z`). Mappers in `src/lib/db/mappers.ts` normalize Postgres strings.
+- APIs emit ISO 8601 UTC with milliseconds (`new Date(x).toISOString()`, e.g. `2026-09-26T10:00:00.000Z`). Mappers in `src/infrastructure/database/mappers.ts` normalize Postgres strings.
 - The Shopify-compat output uses the same ISO strings in `created_at` / `updated_at` / `published_at`.
 
 ### 4.4 REST conventions
 - **Success bodies** are the contract type directly: `CheckoutSession`, `CrawlRun`, `{ products, pagination }`… No `{ data: … }` wrapper.
-- **Error envelope** (`ApiErrorBody`, `src/lib/contracts/api.ts`) on every non-2xx JSON response:
+- **Error envelope** (`ApiErrorBody`, `src/contracts/api.ts`) on every non-2xx JSON response:
   ```json
   { "error": { "code": "not_found", "message": "Product not found", "details": { "id": "…" }, "request_id": "5b0c…" } }
   ```
@@ -228,7 +228,7 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
   **B11:** this table is the only code list. Stream-specific reasons go in `details.reason`, never in `code`. WS5 CCR-3's and WS2's store-submit codes map as follows: `invalid_url` / `invalid_body` / `url_not_allowed` → `validation_error`; `opted_out` → `forbidden`; `blocked` → `upstream_blocked`; `too_many_crawls` → `rate_limited`; `internal` → `internal`. For example: `{ "error": { "code": "forbidden", "message": "Store opted out", "details": { "reason": "opted_out" } } }`. The UI switches on `code` and may refine it with `details.reason`.
 - **Checkout business outcomes are not errors.** Out of stock, price changed, declined card and handoff return **HTTP 200** with a `CheckoutSession` whose `messages[]` explains (UCP convention). Protocol errors (validation, not found, invalid state) use the envelope.
 - **Headers:**
-  - every `/api/**`, `/s/**` and discovery response sends the CORS headers from `src/lib/http.ts`;
+  - every `/api/**`, `/s/**` and discovery response sends the CORS headers from `src/shared/http.ts`;
   - every response sends `Request-Id` (echoed from the request's `Request-Id` / `X-Request-Id`, else a fresh uuid);
   - every public route file exports `OPTIONS = preflight`.
 - **Catalog product shape (B7).** MCP and REST catalog outputs (`search_catalog`, `lookup_catalog`, `get_product`, `GET /api/v1/search`, `GET /api/v1/products/{id}`) use the **UCP product shape** (`toUcpProduct`, WS3, spec 03 §6.4). Raw `IndexedProduct` is available at `GET /api/v1/products/{id}?format=indexed`. `structuredContent` equals the REST body.
@@ -236,12 +236,12 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 - **Pagination:**
   - search uses an opaque `cursor` = base64url of `{"o":<offset>}` and returns `pagination: { cursor, has_next_page, total_count }`;
   - `products.json` uses Shopify's `?limit=&page=` (limit ≤ 250, default 30).
-- **Handlers are wrapped** with `route(name, handler)` from `src/lib/http.ts`, which handles the request id, the error envelope and a timing log line.
+- **Handlers are wrapped** with `route(name, handler)` from `src/shared/http.ts`, which handles the request id, the error envelope and a timing log line.
 
 ### 4.5 MCP conventions
 - Tool names and input shapes are in §6.8. Validate with the exported zod schemas: pass them as `inputSchema`. mcp-handler 2 accepts a `z.object`. UNVERIFIED on 16.3; fallback: pass `schema.shape`.
 - **structuredContent == the REST twin's JSON body.**
-  - Return `toolResult(structured, summary)` from `src/lib/mcp/result.ts`. Its text block is a one-line summary **plus the compact JSON**, because some clients only pass `content` to the model.
+  - Return `toolResult(structured, summary)` from `src/infrastructure/mcp/result.ts`. Its text block is a one-line summary **plus the compact JSON**, because some clients only pass `content` to the model.
   - Never throw out of a handler. Catch and return `toolError(err, toolName)`, which gives `isError: true` and `structuredContent: { error: { code, message, details? } }`.
 - Do not declare `outputSchema` in the MVP. How SDK v2 validates `outputSchema` against error results is UNVERIFIED.
 - Every tool accepts an optional `meta["ucp-agent"].profile`:
@@ -251,7 +251,7 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 - Tool descriptions must say that prices are **integer minor units** ("$50 = 5000") and that the query takes keywords only.
 
 ### 4.6 Logging
-- Use `log.info|warn|error|debug(event, fields)` from `src/lib/log.ts`: one JSON line on stdout/stderr. `debug` prints only when `LOG_LEVEL=debug`.
+- Use `log.info|warn|error|debug(event, fields)` from `src/shared/log.ts`: one JSON line on stdout/stderr. `debug` prints only when `LOG_LEVEL=debug`.
 - Event names are `area.thing[.verb]`, for example:
   - `crawl.run.started`, `crawl.page.failed`;
   - `checkout.transition`;
@@ -266,7 +266,7 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 - `checkout_events.message` / `.data` are **public** (timeline). They may carry PI ids, merchant order ids and amounts. They must never carry PII.
 
 ### 4.7 Environment variables
-Read env lazily through `src/lib/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()`, `flags`), never at module top level, so `next build` works without secrets. A missing optional feature variable becomes `AppError("not_implemented")`. It never crashes the app.
+Read env lazily through `src/shared/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()`, `flags`), never at module top level, so `next build` works without secrets. A missing optional feature variable becomes `AppError("not_implemented")`. It never crashes the app.
 
 | Variable | Exposure | Needed by | Example / default |
 |---|---|---|---|
@@ -332,10 +332,10 @@ Local values go in `.env.local` (git-ignored). Deploy values go in Vercel projec
 
 ### 4.10 Server-only boundaries
 - These start with `import "server-only"` and must never be imported from a `"use client"` module:
-  - `src/lib/db/**` (except `mappers.ts`)
-  - `src/lib/supabase/admin.ts`, `src/lib/http.ts`, `src/lib/env.ts`
-  - `src/lib/crawl/**`, `src/lib/checkout/**`, `src/lib/payments/**`, `src/lib/mcp/**`
-- These are isomorphic (safe in client components): `src/lib/contracts/**`, `src/lib/money.ts`, `src/lib/slug.ts`, `src/lib/errors.ts`, `src/lib/log.ts`, `src/lib/db/mappers.ts`.
+  - `src/infrastructure/database/**` (except `mappers.ts`)
+  - `src/infrastructure/supabase/admin.ts`, `src/shared/http.ts`, `src/shared/env.ts`
+  - `src/features/crawl/**`, `src/features/checkout/**`, `src/features/checkout/payments/**`, `src/infrastructure/mcp/**`
+- These are isomorphic (safe in client components): `src/contracts/**`, `src/shared/money.ts`, `src/shared/slug.ts`, `src/shared/errors.ts`, `src/shared/log.ts`, `src/infrastructure/database/mappers.ts`.
 - Secrets exist only in server env vars without the `NEXT_PUBLIC_` prefix.
 - Scripts outside Next that import server-only modules must run with the `react-server` condition:
   ```bash
@@ -352,7 +352,7 @@ Local values go in `.env.local` (git-ignored). Deploy values go in Vercel projec
 | Server Components that need the user session | `createClient()` from `@/lib/supabase/server` | Not needed in the MVP (no auth). Calling `cookies()` makes the route dynamic. |
 | Session refresh | `@/lib/supabase/proxy` from `src/proxy.ts` only | Existing scaffold |
 
-Direct `.from(...)` queries outside `src/lib/db/**` are allowed only in WS5 client components (public reads) and in migrations/scripts. Everything else goes through a db helper. If a helper is missing, ask WS1 or add it with a heads-up.
+Direct `.from(...)` queries outside `src/infrastructure/database/**` are allowed only in WS5 client components (public reads) and in migrations/scripts. Everything else goes through a db helper. If a helper is missing, ask WS1 or add it with a heads-up.
 
 Realtime example (WS5):
 ```ts
@@ -376,7 +376,7 @@ supabase.channel(`crawl:${id}`)
 
 ---
 
-## 5. Contract files (`src/lib/contracts/`)
+## 5. Contract files (`src/contracts/`)
 
 | File | Contents |
 |---|---|
@@ -392,7 +392,7 @@ supabase.channel(`crawl:${id}`)
 | `index.ts` | barrel. Always `import { … } from "@/lib/contracts"` |
 
 ```ts
-// src/lib/contracts/index.ts
+// src/contracts/index.ts
 export * from "./primitives";
 export * from "./api";
 export * from "./catalog";
@@ -410,7 +410,7 @@ Contracts are isomorphic: zod is their only dependency.
 
 ## 6. Canonical contracts (copy verbatim)
 
-### 6.1 `src/lib/contracts/primitives.ts`
+### 6.1 `src/contracts/primitives.ts`
 ```ts
 import { z } from "zod";
 
@@ -468,7 +468,7 @@ export const PRODUCTS_JSON_DEFAULT_LIMIT = 30;  // Shopify default
 export const PRODUCTS_JSON_MAX_LIMIT = 250;
 ```
 
-### 6.2 `src/lib/contracts/api.ts`
+### 6.2 `src/contracts/api.ts`
 ```ts
 // REST error envelope + codes. Every non-2xx JSON response from /api/** uses ApiErrorBody.
 export const API_ERROR_STATUS = {
@@ -502,7 +502,7 @@ export interface ApiErrorBody {
 }
 ```
 
-### 6.3 `src/lib/contracts/catalog.ts`
+### 6.3 `src/contracts/catalog.ts`
 ```ts
 import { z } from "zod";
 import {
@@ -618,7 +618,7 @@ export interface SearchResult {
 }
 ```
 
-### 6.4 `src/lib/contracts/store.ts`
+### 6.4 `src/contracts/store.ts`
 ```ts
 import type {
   CheckoutConnectorId, ExtractionSource, IsoDateTime, Platform,
@@ -765,7 +765,7 @@ export interface PublicMetrics {
 }
 ```
 
-### 6.5 `src/lib/contracts/crawl.ts`
+### 6.5 `src/contracts/crawl.ts`
 ```ts
 import type { NormalizedProduct, Offer } from "./catalog";
 import type { CrawlLogEntry } from "./store";
@@ -797,7 +797,7 @@ export interface PlatformAdapter {
 }
 ```
 
-### 6.5a `src/lib/contracts/scan.ts` (round 2, DECISIONS §A)
+### 6.5a `src/contracts/scan.ts` (round 2, DECISIONS §A)
 The type block is DECISIONS §A **verbatim**. Fields may be added later (additively); none may be renamed. Everything below the marked line is an addition. DB CHECK constraints on `scans` and `stores.best_method` mirror the value arrays.
 ```ts
 import { z } from "zod";
@@ -878,7 +878,7 @@ export interface ScanStartResult {       // WS2 02 §15.1(c)
 ```
 Rules (DECISIONS §A, restated for implementers): a probe **passes** when an agent could at least list products with price and availability through it, and is **partial** when only some capabilities work. The score reflects the best method achieved plus its capabilities: `api` gets the highest band, `dom` the middle, `computer_use` the lowest, `none` about 0. WS2 owns the weights (spec 02). `grade` uses `gradeFor(score)` from `store.ts`. The computer-use probe always stops before payment and never types real buyer data. Screenshots and step text are public (bucket and table are public-read).
 
-### 6.6 `src/lib/contracts/checkout.ts`
+### 6.6 `src/contracts/checkout.ts`
 ```ts
 import { z } from "zod";
 import type { IndexedVariant } from "./catalog";
@@ -1182,7 +1182,7 @@ export interface PaymentRail {
 }
 ```
 
-### 6.7 `src/lib/contracts/services.ts`
+### 6.7 `src/contracts/services.ts`
 ```ts
 // Cross-stream function signatures. Implementations MUST be typed with these, e.g.
 //   export const verifyOffer: VerifyOfferFn = async (variantId) => { ... };
@@ -1202,7 +1202,7 @@ export interface RequestContext {
   user_agent?: string;
 }
 
-// ---------- WS2: import from "@/lib/crawl" (src/lib/crawl/index.ts) ----------
+// ---------- WS2: import from "@/lib/crawl" (src/features/crawl/index.ts) ----------
 /**
  * Normalize rawUrl (or use opts.storeId for POST /api/v1/stores {store_id}), upsert the stores row, reuse the
  * latest ScanReport to pick the method (api → platform adapter, dom → sitemap + JSON-LD / DOM recipe), insert a
@@ -1224,7 +1224,7 @@ export type VerifyOfferFn = (variantId: string) => Promise<Offer>;
 /** "before": derived from the store's latest ScanReport (B2; probes the site only if there is none). "after": score with our hosted surfaces. */
 export type ComputeReadinessFn = (store: Store, phase: "before" | "after") => Promise<ReadinessReport>;
 
-// ---------- WS2 scan: import from "@/lib/scan" (src/lib/scan/index.ts) ----------
+// ---------- WS2 scan: import from "@/lib/scan" (src/features/scan/index.ts) ----------
 /** Normalize URL, upsertStoreForUrl, reuse an active scan (< 6 min) or insert a queued one (db.upsertScan), schedule runScan() with after(). Returns immediately. */
 export type StartScanFn = (
   rawUrl: string,
@@ -1233,8 +1233,8 @@ export type StartScanFn = (
 /** Runs the cascade (api → dom → computer_use) inside after(). Persists every probe transition via db.upsertScan (Realtime). Never throws: failures end in status "failed". */
 export type RunScanFn = (scanId: string) => Promise<ScanReport>;
 
-// ---------- WS4: import from "@/lib/checkout" (src/lib/checkout/index.ts) ----------
-// All throw AppError (src/lib/errors.ts): not_found, validation_error, invalid_state, gone,
+// ---------- WS4: import from "@/lib/checkout" (src/features/checkout/index.ts) ----------
+// All throw AppError (src/shared/errors.ts): not_found, validation_error, invalid_state, gone,
 // idempotency_conflict, upstream_error. Business outcomes (out of stock, handoff, declined)
 // are NOT thrown: they come back as a CheckoutSession with messages[] (HTTP 200).
 export interface CheckoutService {
@@ -1248,7 +1248,7 @@ export interface CheckoutService {
 }
 ```
 
-### 6.8 `src/lib/contracts/mcp.ts` (MCP tool list)
+### 6.8 `src/contracts/mcp.ts` (MCP tool list)
 ```ts
 import { z } from "zod";
 import type { IndexedProduct } from "./catalog";
@@ -1262,7 +1262,7 @@ import type { CrawlRun, CrawlRunStatus, Store, StoreSummary } from "./store";
 
 // Rule: a tool's structuredContent === the JSON body of its REST twin.
 // B7: catalog outputs use the UCP product shape. Its exact fields are owned by WS3
-// (src/lib/formats/ucp.ts toUcpProduct, spec 03 §6.4); contracts keep it open.
+// (src/features/catalog/formats/ucp.ts toUcpProduct, spec 03 §6.4); contracts keep it open.
 export interface UcpProduct { id: string; title: string; [key: string]: unknown }
 // Every tool also returns content: [{ type: "text", text: <1-3 line summary> }].
 
@@ -1276,7 +1276,7 @@ export const UcpMetaSchema = z
 
 const Id = z.uuid();
 
-// ---------- catalog (WS3: src/lib/mcp/tools/catalog.ts) ----------
+// ---------- catalog (WS3: src/infrastructure/mcp/tools/catalog.ts) ----------
 export const ListStoresInputSchema = z.object({
   query: z.string().trim().max(200).optional().describe("Matches store name or domain"),
   platform: z.enum(PLATFORMS).optional(),
@@ -1347,7 +1347,7 @@ export interface GetProductIndexedOutput {
   verification?: GetProductOutput["verification"];
 }
 
-// ---------- indexing (WS2: src/lib/crawl/mcp-tools.ts) ----------
+// ---------- indexing (WS2: src/features/crawl/mcp-tools.ts) ----------
 export const IndexStoreInputSchema = z.object({
   url: z.string().trim().min(3).max(2048).describe("Store homepage URL or domain, e.g. 'www.bulk.com/uk'"),
   meta: UcpMetaSchema,
@@ -1365,7 +1365,7 @@ export type IndexStoreOutput = IndexStoreResult;
 export const GetCrawlStatusInputSchema = z.object({ crawl_run_id: Id, meta: UcpMetaSchema });
 export type GetCrawlStatusOutput = CrawlRun; // WS2 returns getCrawlRunView(id), a superset of CrawlRun
 
-// ---------- scan (WS2: src/lib/crawl/mcp-tools.ts, DECISIONS §A) ----------
+// ---------- scan (WS2: src/features/crawl/mcp-tools.ts, DECISIONS §A) ----------
 export const ScanStoreInputSchema = z.object({
   url: z.string().trim().min(3).max(2048).describe('Store homepage URL or domain, e.g. "https://www.bulk.com/uk" or "bulk.com".'),
   mode: z.enum(["cascade", "full"]).optional().describe('Default "cascade": stop at the first access method that works.'),
@@ -1376,7 +1376,7 @@ export type ScanStoreOutput = ScanStartResult; // {scan_id, store_id, status_url
 export const GetScanInputSchema = z.object({ scan_id: z.uuid().describe("From scan_store."), meta: UcpMetaSchema });
 export type GetScanOutput = ScanReport;           // = GET /api/v1/scans/{id}
 
-// ---------- checkout (WS4: src/lib/checkout/mcp-tools.ts) ----------
+// ---------- checkout (WS4: src/features/checkout/mcp-tools.ts) ----------
 export const CreateCheckoutToolInputSchema = z.object({
   checkout: CreateCheckoutInputSchema,
   idempotency_key: z.string().min(1).max(255).optional(),
@@ -1466,9 +1466,9 @@ REST bodies for checkout: the body of `POST /api/v1/checkouts` is `CreateCheckou
 - `context.currency` → `currency`, only when a price filter is present
 - `pagination.limit` → `limit`; decoded `cursor` → `offset`
 
-### 6.9 MCP glue (`src/lib/mcp/types.ts`, `src/lib/mcp/result.ts`)
+### 6.9 MCP glue (`src/infrastructure/mcp/types.ts`, `src/infrastructure/mcp/result.ts`)
 ```ts
-// src/lib/mcp/types.ts  (WS1 creates at T+30; WS3 owns)
+// src/infrastructure/mcp/types.ts  (WS1 creates at T+30; WS3 owns)
 import type { createMcpHandler } from "mcp-handler";
 /** The server object mcp-handler passes to its init callback (has registerTool). */
 export type McpServer = Parameters<Parameters<typeof createMcpHandler>[0]>[0];
@@ -1477,7 +1477,7 @@ export type ToolRegistrar = (server: McpServer) => void;
 //   import type { McpServer } from "@modelcontextprotocol/server";
 ```
 ```ts
-// src/lib/mcp/result.ts  (WS1 creates at T+30; WS3 owns)
+// src/infrastructure/mcp/result.ts  (WS1 creates at T+30; WS3 owns)
 import type { ToolResult } from "@/lib/contracts";
 import { toAppError } from "@/lib/errors";
 import { log } from "@/lib/log";
@@ -1539,7 +1539,7 @@ export const registerCheckoutTools: ToolRegistrar = (server) => {
 };
 ```
 
-### 6.10 db helper signatures (`src/lib/db/**`, WS1; behavior in spec 01 §6)
+### 6.10 db helper signatures (`src/infrastructure/database/**`, WS1; behavior in spec 01 §6)
 Import everything from `@/lib/db` (the barrel re-exports every file below). All helpers are server-only. Readers exclude opted-out stores unless noted. This is the complete B12 list; WS3 and WS5 do not write private copies.
 ```ts
 import type {
@@ -1728,11 +1728,11 @@ export declare function getIndexStats(storeId: string): Promise<IndexStats>;
 
 ### 6.11 Shared helpers (WS1; full code in spec 01 §10)
 ```ts
-// src/lib/errors.ts   (isomorphic)
+// src/shared/errors.ts   (isomorphic)
 export class AppError extends Error { code: ApiErrorCode; details?: unknown; get status(): number }
 export function isAppError(e: unknown): e is AppError;
 export function toAppError(e: unknown): AppError;           // ZodError→validation_error, 23505→conflict, PGRST116→not_found, 22P02→validation_error
-// src/lib/http.ts     (server-only)
+// src/shared/http.ts     (server-only)
 export const CORS_HEADERS: Record<string, string>;
 export function getRequestId(req: Request): string;
 export function json(data: unknown, init?: ResponseInit & { requestId?: string }): Response;
@@ -1742,14 +1742,14 @@ export function preflight(): Response;                      // export const OPTI
 export function parseJsonBody<S extends z.ZodType>(req: Request, schema: S): Promise<z.output<S>>;
 export function parseSearchParams<S extends z.ZodType>(req: Request, schema: S): z.output<S>;
 export function route<Ctx>(name: string, handler: (req: NextRequest, ctx: Ctx, meta: { requestId: string }) => Promise<Response>): (req: NextRequest, ctx: Ctx) => Promise<Response>;
-// src/lib/log.ts      (isomorphic)
+// src/shared/log.ts      (isomorphic)
 export const log: { debug; info; warn; error(event: string, err?: unknown, fields?: Record<string, unknown>): void };
-// src/lib/env.ts      (server-only)
+// src/shared/env.ts      (server-only)
 export function optionalEnv(name: EnvName): string | undefined;
 export function requireEnv(name: EnvName): string;          // throws AppError("not_implemented")
 export function appUrl(): string;                            // APP_URL > https://$VERCEL_PROJECT_PRODUCTION_URL > http://localhost:3000
 export const flags: { demoWalletEnabled(): boolean; allowPrivateStoreHosts(): boolean; crawlMaxProducts(): number; crawlerUserAgent(): string; scanCuEnabled(): boolean; scanCuMaxSteps(): number };
-// src/lib/money.ts, src/lib/slug.ts: see spec 01 §7 (full code of everything above: spec 01 §10)
+// src/shared/money.ts, src/shared/slug.ts: see spec 01 §7 (full code of everything above: spec 01 §10)
 ```
 
 ---

@@ -1,9 +1,11 @@
 # 04: WS4 Checkout and payments (implementation spec)
 
+> **Current hackathon override:** external vendors are mocked, per Pierre's latest instruction. Run the working local checkout at `/demo/checkout`; see [the implementation/runbook](../guides/checkout.md). Live Stripe/SPT calls, Woo Docker/tunnels and a separate wallet service below are deferred. Preserve the shared service/tool interfaces, persistence, idempotency, failure handling and handoff. Never present mock receipts as live vendor evidence.
+
 > **Round-2 changes (binding: `docs/specs/DECISIONS.md`; canonical contracts: `00-overview-and-contracts.md` §6)**
 > - **B5 connectors:** `CheckoutConnector.quote(store, input: QuoteInput, prev)` and `continueUrl(store, lines: ResolvedLine[])` exactly as in 00. The round-1 `_resolved` workaround is gone. `CheckoutState` includes **`handoff`** (→ `requires_escalation`). The handoff connector now goes `quoting → handoff`, and `requires_action` is used only for SPT 3DS (mocked).
 > - **Transitions** come from the contract's `ALLOWED_TRANSITIONS`. Same-state updates that the table doesn't list (requote while quoting, placement unknown, capture failed) use `annotate()`, which patches the row and logs an event without changing state. Only `awaiting_payment` expires; a 3DS `requires_action` fails after the TTL.
-> - **Errors** use `AppError` + `ApiErrorCode` from `src/lib/errors.ts` (00 §6.2). HTTP goes through WS1's `src/lib/http.ts` (`route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`). DB access goes through WS1's `src/lib/db` checkout helpers (B12). The WS4 `repo.ts` keeps only the payment-lock RPC wrappers.
+> - **Errors** use `AppError` + `ApiErrorCode` from `src/shared/errors.ts` (00 §6.2). HTTP goes through WS1's `src/shared/http.ts` (`route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`). DB access goes through WS1's `src/infrastructure/database` checkout helpers (B12). The WS4 `repo.ts` keeps only the payment-lock RPC wrappers.
 > - **Service signatures** take `ctx: RequestContext` and implement `CheckoutService` (00 §6.7), including `listCheckoutEvents`. The MCP tool input schemas and wallet schemas come from contracts (00 §6.8); the round-1 local `schemas.ts` is dropped. The one exception: `create_checkout`/`update_checkout` extend the contract schemas to also accept Shopify-style line items `{item:{id}, quantity}` (§12.1).
 > - **Session shape** follows 00:
 >   - `store.name`, `links[]` with the timeline link, `LineItem.variant_title/url`;
@@ -43,7 +45,7 @@ One Stripe test-payment path only. The demo-token helper issues SPTs (or an expl
 1. At T+0, run the Stripe feasibility check (§4). Record `STRIPE_SPT_MODE=spt|fallback` in `.env.local`.
 2. Bring up the Woo demo store (§5): run `infra/woo/setup.sh`, start the tunnel, run `infra/woo/smoke.sh` → PASS. Index the store through WS2 (`POST /api/v1/stores`).
 3. Build in this order:
-   - `src/lib/checkout/{state,repo,session}.ts`
+   - `src/features/checkout/{state,repo,session}.ts`
    - `connectors/woo.ts`
    - `service.ts` (create, update, get)
    - REST create/get/update
@@ -51,7 +53,7 @@ One Stripe test-payment path only. The demo-token helper issues SPTs (or an expl
    - `connectors/handoff.ts`
    - demo wallet MCP
    - The stretch `connectors/browser.ts` comes only after M10.
-4. Ship `src/lib/checkout/mcp-tools.ts` (`registerCheckoutTools`) and the one-line re-export `src/lib/mcp/checkout-tools.ts` by **T+60**. WS3 imports the latter. Until the Woo path works, `create_checkout` uses the handoff connector (WS3 CR-5b).
+4. Ship `src/features/checkout/mcp-tools.ts` (`registerCheckoutTools`) and the one-line re-export `src/infrastructure/mcp/checkout-tools.ts` by **T+60**. WS3 imports the latter. Until the Woo path works, `create_checkout` uses the handoff connector (WS3 CR-5b).
 5. Safety invariants. Never break these:
    - Headless orders are placed **only** on allowlisted domains (our Woo store).
    - No connector ever types card data or clicks "pay" on a merchant site.
@@ -79,13 +81,13 @@ One Stripe test-payment path only. The demo-token helper issues SPTs (or an expl
 - Catalog reads and `search_catalog` (WS3).
 - Crawling, scanning, `dom_recipe` discovery and `verifyOffer` (WS2). WS4 only **reads** `stores.best_method` / `stores.dom_recipe`.
 - UI (WS5). WS5 reads `getCheckout()` and `checkout_events`.
-- `src/lib/db/**`, `src/lib/errors.ts`, `src/lib/http.ts`, `src/lib/env.ts` and the proxy matcher (WS1).
+- `src/infrastructure/database/**`, `src/shared/errors.ts`, `src/shared/http.ts`, `src/shared/env.ts` and the proxy matcher (WS1).
 - Package installs (WS1 installs the union; WS4 installs nothing).
 
 ### 1.3 Owned files
 
 ```
-src/lib/checkout/
+src/features/checkout/
   index.ts              # barrel: export const checkoutService: CheckoutService + named functions (00 §6.7)
   service.ts            # service implementation (§2.1, §10)
   state.ts              # transition(), annotate(), expireIfDue() over ALLOWED_TRANSITIONS
@@ -97,11 +99,11 @@ src/lib/checkout/
   connectors/woo.ts     # wooConnector
   connectors/handoff.ts # handoffConnector
   connectors/browser.ts # browserConnector (STRETCH, §8.3)
-src/lib/payments/
+src/features/checkout/payments/
   index.ts              # getRail(), railForHandler()
   stripe.ts             # stripeRequest(), stripeSptRail, issueTestSpt()
-src/lib/mcp/checkout-tools.ts          # one line: export { registerCheckoutTools } from "@/lib/checkout/mcp-tools";  (WS3's import path)
-src/lib/demo-wallet/tools.ts           # registerDemoWalletTools(server)
+src/infrastructure/mcp/checkout-tools.ts          # one line: export { registerCheckoutTools } from "@/lib/checkout/mcp-tools";  (WS3's import path)
+src/features/checkout/demo/wallet/tools.ts           # registerDemoWalletTools(server)
 src/app/api/v1/checkouts/route.ts                 # POST
 src/app/api/v1/checkouts/[id]/route.ts            # GET, PUT
 src/app/api/v1/checkouts/[id]/complete/route.ts   # POST
@@ -121,11 +123,11 @@ supabase/migrations/20260926024000_ws4_checkout.sql
 
 | Need | From | Name | If late |
 |---|---|---|---|
-| Contract types + schemas | WS1 `@/lib/contracts` | `CheckoutState`, `STATE_TO_STATUS`, `ALLOWED_TRANSITIONS`, `QuoteInput`, `ResolvedLine`, `Quote`, `CheckoutConnector`, `PaymentRail`, `PaymentReceipt`, `CheckoutRecord`, `CheckoutPaymentRecord`, `CheckoutSession`, `Order`, `CheckoutEvent`, `MESSAGE_CODES`, `QUOTE_TTL_SECONDS`, `PAYMENT_HANDLER_IDS`, `RequestContext`, `CheckoutService`, the MCP/wallet input schemas (00 §6.8), `DomRecipe`, `AccessMethod` (DECISIONS A) | Temporary local copy in `src/lib/checkout/_contracts.tmp.ts`; delete at T+30 |
-| Errors / HTTP / env / log | WS1 `src/lib/{errors,http,env,log}.ts` | `AppError`, `toAppError`, `route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`, `CORS_HEADERS`, `optionalEnv`, `requireEnv`, `appUrl`, `flags`, `log` | Minimal local shims with the same names, deleted when WS1 lands |
+| Contract types + schemas | WS1 `@/lib/contracts` | `CheckoutState`, `STATE_TO_STATUS`, `ALLOWED_TRANSITIONS`, `QuoteInput`, `ResolvedLine`, `Quote`, `CheckoutConnector`, `PaymentRail`, `PaymentReceipt`, `CheckoutRecord`, `CheckoutPaymentRecord`, `CheckoutSession`, `Order`, `CheckoutEvent`, `MESSAGE_CODES`, `QUOTE_TTL_SECONDS`, `PAYMENT_HANDLER_IDS`, `RequestContext`, `CheckoutService`, the MCP/wallet input schemas (00 §6.8), `DomRecipe`, `AccessMethod` (DECISIONS A) | Temporary local copy in `src/features/checkout/_contracts.tmp.ts`; delete at T+30 |
+| Errors / HTTP / env / log | WS1 `src/shared/{errors,http,env,log}.ts` | `AppError`, `toAppError`, `route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`, `CORS_HEADERS`, `optionalEnv`, `requireEnv`, `appUrl`, `flags`, `log` | Minimal local shims with the same names, deleted when WS1 lands |
 | DB helpers | WS1 `@/lib/db` (B12) | `getVariantsForCheckout`, `getStoreById`, `insertCheckout`, `getCheckoutRecord`, `getCheckoutByIdempotencyKey`, `updateCheckoutRecord(id, patch, {expectState})`, `insertCheckoutEvent`, `listCheckoutEvents`, `insertOrder`, `getOrder`, `getOrderByCheckoutId`, `updateOrderStatus`, `logAgentRequest` | none; these are blocking. Use the seed |
 | Tables | WS1 core migration | `checkouts` (incl. `messages` jsonb), `checkout_events`, `orders`, `stores.best_method`, `stores.dom_recipe` | none |
-| MCP glue | WS1/WS3 `src/lib/mcp/{types,result}.ts` | `McpServer` type, `toolResult`, `toolError` | `import type { McpServer } from "@modelcontextprotocol/server"` |
+| MCP glue | WS1/WS3 `src/infrastructure/mcp/{types,result}.ts` | `McpServer` type, `toolResult`, `toolError` | `import type { McpServer } from "@modelcontextprotocol/server"` |
 | Packages | WS1 install | `zod@^4`, `mcp-handler@2.2.0`, `@modelcontextprotocol/server@2.1.0`, `stripe`; stretch `playwright-core`, `@browserbasehq/stagehand@4.1.0` | none |
 | Indexed demo store | WS2 `POST /api/v1/stores {url}` (Woo adapter) | products + variants rows for the demo store | Seed SQL in §5.7 |
 
@@ -133,7 +135,7 @@ supabase/migrations/20260926024000_ws4_checkout.sql
 
 ## 2. Exports (exact signatures)
 
-### 2.1 `src/lib/checkout` (`index.ts` re-exports from `service.ts`)
+### 2.1 `src/features/checkout` (`index.ts` re-exports from `service.ts`)
 
 ```ts
 import "server-only";
@@ -159,13 +161,13 @@ export const checkoutService: CheckoutService;   // object literal of the seven 
 ### 2.2 Plug-in implementations (types from 00 §6.6)
 
 ```ts
-// src/lib/checkout/connectors/woo.ts
+// src/features/checkout/connectors/woo.ts
 export const wooConnector: CheckoutConnector;          // id: "woo_store_api"
-// src/lib/checkout/connectors/handoff.ts
+// src/features/checkout/connectors/handoff.ts
 export const handoffConnector: CheckoutConnector;      // id: "handoff"
-// src/lib/checkout/connectors/browser.ts  (STRETCH)
+// src/features/checkout/connectors/browser.ts  (STRETCH)
 export const browserConnector: CheckoutConnector;      // id: "browser"
-// src/lib/checkout/connectors/index.ts
+// src/features/checkout/connectors/index.ts
 export type ConnectorStore = Pick<Store, "domain" | "base_url" | "platform"> & {
   best_method?: AccessMethod | "none" | null;          // stores.best_method (DECISIONS A)
   dom_recipe?: DomRecipe | null;                       // stores.dom_recipe  (DECISIONS A)
@@ -174,10 +176,10 @@ export function getConnector(id: CheckoutConnectorId): CheckoutConnector;   // "
 export function resolveCheckoutConnector(store: ConnectorStore): CheckoutConnectorId;
 export function checkoutAllowlist(): string[];         // lowercased hosts
 
-// src/lib/payments/stripe.ts
+// src/features/checkout/payments/stripe.ts
 export const stripeSptRail: PaymentRail;               // id: "stripe_spt"
 export function issueTestSpt(args: { amount: number; currency: string; ttlSeconds?: number }): Promise<{ token: string; mode: "spt" | "fallback"; expires_at: string }>;
-// src/lib/payments/index.ts
+// src/features/checkout/payments/index.ts
 export function getRail(id: PaymentRailId): PaymentRail;
 export function railForHandler(handlerId: string): PaymentRailId | null;
 ```
@@ -185,12 +187,12 @@ export function railForHandler(handlerId: string): PaymentRailId | null;
 ### 2.3 Registrars
 
 ```ts
-// src/lib/checkout/mcp-tools.ts   (re-exported from src/lib/mcp/checkout-tools.ts)
+// src/features/checkout/mcp-tools.ts   (re-exported from src/infrastructure/mcp/checkout-tools.ts)
 import type { McpServer } from "@/lib/mcp/types";      // fallback: "@modelcontextprotocol/server"
 export function registerCheckoutTools(server: McpServer): void;
 // registers: create_checkout, update_checkout, get_checkout, complete_checkout, cancel_checkout, get_order (B4)
 
-// src/lib/demo-wallet/tools.ts
+// src/features/checkout/demo/wallet/tools.ts
 export function registerDemoWalletTools(server: McpServer): void;
 // registers: wallet_issue_spt (00 §6.8 DEMO_WALLET_TOOL_INPUTS)
 ```
@@ -212,7 +214,7 @@ Protocol errors are `new AppError(code, message, details?)` with `ApiErrorCode` 
 | Missing Stripe env, or stubbed code | `not_implemented` (501) | |
 | Merchant / Stripe / facilitator error at quote | `upstream_error` (502) / `upstream_timeout` (504) | |
 
-Internal (never leave the service; mapped to messages or AppError), in `src/lib/checkout/payment-errors.ts`:
+Internal (never leave the service; mapped to messages or AppError), in `src/features/checkout/payment-errors.ts`:
 ```ts
 export class PaymentDeclinedError extends Error { constructor(public declineCode: string, public reference?: string) { super(declineCode); } }
 export class PaymentActionRequiredError extends Error { constructor(public reference: string) { super("requires_action"); } }
@@ -705,7 +707,7 @@ If the sandbox offers SSH or wp-cli (**UNVERIFIED**), run `wp eval-file setup.ph
 
 ---
 
-## 6. Checkout state machine (`src/lib/checkout/state.ts`)
+## 6. Checkout state machine (`src/features/checkout/state.ts`)
 
 ### 6.1 States (contract `CHECKOUT_STATES` → `STATE_TO_STATUS`, 00 §6.6)
 
@@ -899,7 +901,7 @@ grant execute on function public.checkout_acquire_payment_lock(uuid, text, int) 
 grant execute on function public.checkout_release_payment_lock(uuid) to service_role;
 ```
 
-`src/lib/checkout/repo.ts` contains only these two wrappers:
+`src/features/checkout/storage/file-repository.ts` contains only these two wrappers:
 ```ts
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -1084,7 +1086,7 @@ async function woo<T>(base: string, st: { cart_token?: string; nonce?: string },
 
 Validate the fields we use with a local zod schema: `WooCartSchema` (`items[]`, `shipping_rates[]`, `totals`, `needs_shipping`, `errors[]`), using `.catch()` generously (00 §4.9). During quote, `WooError` with status ≥ 500 or `timeout`/`network` maps to `AppError("upstream_error" | "upstream_timeout")`. 4xx codes map to messages (below).
 
-**Money:** Store API prices are strings in minor units with `currency_minor_unit`. Convert with `toMinor(v, wooMinor, currency) = Math.round(Number(v) * 10 ** (isoDigits(currency) - wooMinor))`, using `src/lib/money.ts` helpers if WS1 provides an equivalent.
+**Money:** Store API prices are strings in minor units with `currency_minor_unit`. Convert with `toMinor(v, wooMinor, currency) = Math.round(Number(v) * 10 ** (isoDigits(currency) - wooMinor))`, using `src/shared/money.ts` helpers if WS1 provides an equivalent.
 
 **Address mapping** (`Address`/`Buyer` → Store API):
 ```ts
@@ -1300,7 +1302,7 @@ A CAPTCHA at submit → `placing_order → refunding → failed` (void), never `
 
 ## 9. Payment rails
 
-### 9.1 `stripe_spt` (`src/lib/payments/stripe.ts`)
+### 9.1 `stripe_spt` (`src/features/checkout/payments/stripe.ts`)
 
 This rail uses `fetch` for every call, so there is one code path, preview params are untyped anyway, and there are no SDK version surprises. The `stripe` package is installed but not required.
 
@@ -1736,7 +1738,7 @@ Responses:
 
 ---
 
-## 12. MCP checkout tools (`src/lib/checkout/mcp-tools.ts`, re-exported at `src/lib/mcp/checkout-tools.ts`)
+## 12. MCP checkout tools (`src/features/checkout/mcp-tools.ts`, re-exported at `src/infrastructure/mcp/checkout-tools.ts`)
 
 WS3's `/api/mcp` composes `registerCheckoutTools(server)` (B4). It may first wrap the server with its `instrumentServer()` for logging and rate limits. The registrar registers **six** tools, including `get_order`. WS3 must not register any of them.
 
@@ -1747,7 +1749,7 @@ WS3's `/api/mcp` composes `registerCheckoutTools(server)` (B4). It may first wra
 `create_checkout` and `update_checkout` also accept **Shopify/UCP-style line items** `{ item: { id }, quantity }`, alongside the contract form `{ variant_id, quantity }`. Prompts written for Shopify's UCP MCP then work unchanged. `id` may carry a `sz:variant:` prefix. The registrar owns the extended schemas and normalizes before calling the service, so the service and REST keep the contract shape:
 
 ```ts
-// src/lib/checkout/mcp-tools.ts
+// src/features/checkout/mcp-tools.ts
 import { z } from "zod";
 import { CreateCheckoutInputSchema, UpdateCheckoutInputSchema, CreateCheckoutToolInputSchema, UpdateCheckoutToolInputSchema, LineItemInputSchema } from "@/lib/contracts";
 
@@ -1792,7 +1794,7 @@ Update does the same when `line_items` is present. `structuredContent` is unchan
 | `cancel_checkout` | `CancelCheckoutToolInputSchema` | `CheckoutSession` | `readOnlyHint:false, idempotentHint:true` |
 | `get_order` | `GetOrderToolInputSchema` | `Order` | `readOnlyHint:true` |
 
-- Results use `toolResult(structured, summary)` and `toolError(err, tool)` from `src/lib/mcp/result.ts` (00 §6.9). The text is the one-line summary plus compact JSON; errors use the same `{error:{code,message,details?}}` envelope.
+- Results use `toolResult(structured, summary)` and `toolError(err, tool)` from `src/infrastructure/mcp/result.ts` (00 §6.9). The text is the one-line summary plus compact JSON; errors use the same `{error:{code,message,details?}}` envelope.
 - Never throw out of a handler.
 - **No usage logging in the registrar.** WS3's `instrumentServer(server)` wraps every registrar in `/api/mcp` and is the only place tool calls are written to `agent_requests`. `registerCheckoutTools` must not call `logAgentRequest`. Checkout state changes are still written to `checkout_events` by the service, as before.
 - **Checkout tools never return `not_implemented`.** Before the Woo path or the service is ready, `create_checkout` returns a persisted handoff session (`state: "handoff"`, `status: "requires_escalation"`, `continue_url`). See §10, last paragraph. If the service itself is still stubbed, the registrar builds that session from `handoffConnector` without persisting it. `get_checkout`/`update_checkout`/`complete_checkout`/`cancel_checkout` on an unknown id return `not_found`. `complete_checkout` on a handoff session returns it with `merchant_checkout_required`.
@@ -1906,7 +1908,7 @@ export { guarded as GET, guarded as POST };
 - `wallet_issue_spt` requires an `sk_test_` key, otherwise it returns `AppError("not_implemented")`.
 - Tool descriptions start with "TEST MODE BUYER WALLET (demo)". This stands in for a buyer-side test-token provider, and it is the buyer side, not ShoperZero.
 
-### 13.2 Tools (`src/lib/demo-wallet/tools.ts`; schemas from 00 §6.8)
+### 13.2 Tools (`src/features/checkout/demo/wallet/tools.ts`; schemas from 00 §6.8)
 
 | Tool | Input | Output | Behavior |
 |---|---|---|---|

@@ -7,14 +7,14 @@ Markers: **VERIFIED** = checked on 2026-09-26 against a live endpoint, the npm r
 ## Round-2 changes (DECISIONS.md)
 
 - **B1:** WS3 no longer touches `src/app/api/v1/stores/route.ts`. WS2 owns both GET (list) and POST there. WS3 owns `src/app/api/v1/stores/[slug]/route.ts`. The `stores-list.ts` re-export and old CR-4 are gone.
-- **B4:** `index_store` and `get_crawl_status`, plus the new `scan_store` and `get_scan`, belong to WS2's `registerCrawlTools(server)` (`src/lib/crawl/mcp-tools.ts`). §4.5 keeps only a reference. `/api/mcp` composes three registrars: catalog (WS3, `src/lib/mcp/tools/catalog.ts`), crawl (WS2) and checkout (WS4, `src/lib/checkout/mcp-tools.ts`, including `get_order`). One WS3 logging and rate-limit wrapper covers all three (§3.3). That makes 14 tools.
+- **B4:** `index_store` and `get_crawl_status`, plus the new `scan_store` and `get_scan`, belong to WS2's `registerCrawlTools(server)` (`src/features/crawl/mcp-tools.ts`). §4.5 keeps only a reference. `/api/mcp` composes three registrars: catalog (WS3, `src/infrastructure/mcp/tools/catalog.ts`), crawl (WS2) and checkout (WS4, `src/features/checkout/mcp-tools.ts`, including `get_order`). One WS3 logging and rate-limit wrapper covers all three (§3.3). That makes 14 tools.
 - **B7 (accepted):** MCP and REST return the UCP product shape by default. Raw `IndexedProduct` is available at `?format=indexed`. `structuredContent` equals the REST body.
 - **B8 (accepted):** `/api/mcp` has `maxDuration = 300`.
 - **B10:** agent-checkout status comes from WS4's `resolveCheckoutConnector(store)`.
 - **B11/B12:** errors use 00's `AppError` codes and envelope `{error:{code,message,details?}}`. DB access uses 00 §6.10's helpers: `resolveStore`, `getProduct` (ref forms), `lookupProducts`, `listStoreProducts({limit,page})`, `searchProducts(SearchParams)`, `listStores`, `getLatestCrawlRun`, `getIndexStats`, `getLatestScanForStore`. WS3's private resolvers, id parser and `stores.opted_out` handling were removed.
 - **Aligned to 00:**
-  - WS1's shared helpers `src/lib/http.ts`, `errors.ts`, `log.ts`, `env.ts` and `money.ts`.
-  - `toolResult`/`toolError` in `src/lib/mcp/result.ts`.
+  - WS1's shared helpers `src/shared/http.ts`, `errors.ts`, `log.ts`, `env.ts` and `money.ts`.
+  - `toolResult`/`toolError` in `src/infrastructure/mcp/result.ts`.
   - ISO timestamps with milliseconds, also in the Shopify-compat output.
   - Plain uuids; the `sz:` prefixes are removed.
   - `total_count` in search pagination.
@@ -84,41 +84,41 @@ src/app/.well-known/agent-card.json/route.ts      A2A-style discovery card
 src/app/openapi.json/route.ts                     OpenAPI 3.1 for /api/v1
 src/app/robots.ts                                 robots.txt + Content-Signal
 
-src/lib/mcp/types.ts          McpServer, ToolRegistrar (WS1 stub at T+30, 00 §6.9; WS3 owns)
-src/lib/mcp/result.ts         toolResult(), toolError() (WS1 stub at T+30, verbatim 00 §6.9; WS3 owns)
-src/lib/mcp/instrument.ts     instrumentServer(): rate limit + agent_requests logging for EVERY tool
-src/lib/mcp/instructions.ts   MCP_INSTRUCTIONS string
-src/lib/mcp/tools/catalog.ts  registerCatalogTools: list_stores, search_catalog, lookup_catalog, get_product
+src/infrastructure/mcp/types.ts          McpServer, ToolRegistrar (WS1 stub at T+30, 00 §6.9; WS3 owns)
+src/infrastructure/mcp/result.ts         toolResult(), toolError() (WS1 stub at T+30, verbatim 00 §6.9; WS3 owns)
+src/infrastructure/mcp/instrument.ts     instrumentServer(): rate limit + agent_requests logging for EVERY tool
+src/infrastructure/mcp/instructions.ts   MCP_INSTRUCTIONS string
+src/infrastructure/mcp/tools/catalog.ts  registerCatalogTools: list_stores, search_catalog, lookup_catalog, get_product
 
-src/lib/formats/shopify.ts    toShopifyListProduct, toShopifyDetailProduct, parseShopifyPaging
-src/lib/formats/ucp.ts        toUcpProduct, ucpEnvelope, buildUcpProfile
-src/lib/formats/acp.ts        toAcpRows
-src/lib/formats/llms.ts       renderRootLlmsTxt, renderStoreLlmsTxt
-src/lib/formats/permalink.ts  cartPermalink (merchant add-to-cart / PDP link shown on variants)
-src/lib/formats/openapi.ts    buildOpenApi(base)
-src/lib/formats/agent-card.ts buildAgentCard(base)
-src/lib/formats/text.ts       stripHtml, escapeHtml, truncate, plainDescription, isAvailable
+src/features/catalog/formats/shopify.ts    toShopifyListProduct, toShopifyDetailProduct, parseShopifyPaging
+src/features/catalog/formats/ucp.ts        toUcpProduct, ucpEnvelope, buildUcpProfile
+src/features/catalog/formats/acp.ts        toAcpRows
+src/features/catalog/formats/llms.ts       renderRootLlmsTxt, renderStoreLlmsTxt
+src/features/catalog/formats/permalink.ts  cartPermalink (merchant add-to-cart / PDP link shown on variants)
+src/features/catalog/formats/openapi.ts    buildOpenApi(base)
+src/features/catalog/formats/agent-card.ts buildAgentCard(base)
+src/features/catalog/formats/text.ts       stripHtml, escapeHtml, truncate, plainDescription, isAvailable
 
-src/lib/agent/http.ts         CACHE presets, storeCache(), ucpLinkHeader(), withCors() (MCP streams), mcpPreflight()
-src/lib/agent/log.ts          logHit() → after(() => logAgentRequest(...))
-src/lib/agent/ratelimit.ts    best-effort in-memory limiter
-src/lib/agent/search.ts       catalogSearch() (shared by MCP + REST)
-src/lib/agent/verify.ts       verifyVariants() around WS2's verifyOffer
-src/lib/agent/checkout-status.ts  CHECKOUT_TOOLS_LIVE switch, enabledRails(), agentCheckoutFor()
-src/lib/agent/scan-info.ts    scanInfo(store): optional scan grade / best_method / report URL
+src/features/catalog/http.ts         CACHE presets, storeCache(), ucpLinkHeader(), withCors() (MCP streams), mcpPreflight()
+src/features/catalog/log.ts          logHit() → after(() => logAgentRequest(...))
+src/features/catalog/ratelimit.ts    best-effort in-memory limiter
+src/features/catalog/search.ts       catalogSearch() (shared by MCP + REST)
+src/features/catalog/verify.ts       verifyVariants() around WS2's verifyOffer
+src/features/catalog/checkout-status.ts  CHECKOUT_TOOLS_LIVE switch, enabledRails(), agentCheckoutFor()
+src/features/catalog/scan-info.ts    scanInfo(store): optional scan grade / best_method / report URL
 ```
 
-`src/lib/agent/**` and the `src/lib/formats/*` files beyond `shopify/ucp/acp`, as well as `.well-known/ucp/[version]`, are WS3 additions (CR-3). Do **not** add a `page.tsx` under `src/app/s/`: a `page` and a `route` cannot share a segment, and human pages are WS5's `/stores/{slug}` and `/scan/{id}`.
+`src/features/catalog/**` and the `src/features/catalog/formats/*` files beyond `shopify/ucp/acp`, as well as `.well-known/ucp/[version]`, are WS3 additions (CR-3). Do **not** add a `page.tsx` under `src/app/s/`: a `page` and a `route` cannot share a segment, and human pages are WS5's `/stores/{slug}` and `/scan/{id}`.
 
 ### 1.3 Files WS3 must not edit
 
-- WS1: `src/proxy.ts`, `src/lib/contracts/**`, `src/lib/db/**`, `src/lib/{errors,http,log,env,money,slug}.ts`, `package.json`, `next.config.ts`.
-- WS2: `src/app/api/v1/stores/route.ts` (GET list and POST, per B1), `src/app/api/v1/crawl-runs/**`, `src/app/api/v1/scans/**`, `src/lib/crawl/**` (including `mcp-tools.ts`), `src/lib/scan/**`, `src/lib/readiness/**`.
-- WS4: `src/lib/checkout/**` (including `mcp-tools.ts`), `src/lib/payments/**`, `src/app/api/v1/checkouts/**`, `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`.
+- WS1: `src/proxy.ts`, `src/contracts/**`, `src/infrastructure/database/**`, `src/shared/{errors,http,log,env,money,slug}.ts`, `package.json`, `next.config.ts`.
+- WS2: `src/app/api/v1/stores/route.ts` (GET list and POST, per B1), `src/app/api/v1/crawl-runs/**`, `src/app/api/v1/scans/**`, `src/features/crawl/**` (including `mcp-tools.ts`), `src/features/scan/**`, `src/features/scan/readiness/**`.
+- WS4: `src/features/checkout/**` (including `mcp-tools.ts`), `src/features/checkout/payments/**`, `src/app/api/v1/checkouts/**`, `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`.
 
 ### 1.4 What WS3 consumes
 
-**Contracts** (`@/lib/contracts`, 00 §6): `Money, Platform, CheckoutConnectorId, PaymentRailId, AgentSurface, UCP_VERSION, UCP_SUPPORTED_VERSIONS, ACP_VERSION, PAYMENT_HANDLER_IDS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, LOOKUP_MAX_IDS, LIST_STORES_MAX_LIMIT, PRODUCTS_JSON_DEFAULT_LIMIT, PRODUCTS_JSON_MAX_LIMIT, Offer, IndexedVariant, IndexedProduct, ProductSummary, SearchParams, SearchResult, Store, StoreSummary, StoreRef, CrawlRun, ReadinessGrade, ToolResult, UcpMetaSchema, ListStoresInputSchema, SearchCatalogInputSchema, LookupCatalogInputSchema, GetProductInputSchema, ApiErrorCode`, and from `src/lib/contracts/scan.ts` (DECISIONS §A): `ScanReport, AccessMethod`.
+**Contracts** (`@/lib/contracts`, 00 §6): `Money, Platform, CheckoutConnectorId, PaymentRailId, AgentSurface, UCP_VERSION, UCP_SUPPORTED_VERSIONS, ACP_VERSION, PAYMENT_HANDLER_IDS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, LOOKUP_MAX_IDS, LIST_STORES_MAX_LIMIT, PRODUCTS_JSON_DEFAULT_LIMIT, PRODUCTS_JSON_MAX_LIMIT, Offer, IndexedVariant, IndexedProduct, ProductSummary, SearchParams, SearchResult, Store, StoreSummary, StoreRef, CrawlRun, ReadinessGrade, ToolResult, UcpMetaSchema, ListStoresInputSchema, SearchCatalogInputSchema, LookupCatalogInputSchema, GetProductInputSchema, ApiErrorCode`, and from `src/contracts/scan.ts` (DECISIONS §A): `ScanReport, AccessMethod`.
 
 **DB helpers** (`@/lib/db`, 00 §6.10 + DECISIONS B12). Behavior per 01 §6.3:
 
@@ -139,11 +139,11 @@ src/lib/agent/scan-info.ts    scanInfo(store): optional scan grade / best_method
 | `logAgentRequest({ surface, tool?, store_id?, user_agent? })` never throws | `logHit` |
 
 **Shared helpers** (WS1, 00 §6.11):
-- `src/lib/http.ts`: `route`, `json`, `text`, `errorResponse`, `preflight`, `parseSearchParams`, `CORS_HEADERS`, `getRequestId`.
-- `src/lib/errors.ts`: `AppError`, `toAppError`.
-- `src/lib/log.ts`: `log`.
-- `src/lib/env.ts`: `appUrl()`, `optionalEnv`.
-- `src/lib/money.ts`: `fromMinor` gives the Shopify `"25.00"` form; `acpPrice` gives `"25.00 USD"`; `formatMoney` is for display.
+- `src/shared/http.ts`: `route`, `json`, `text`, `errorResponse`, `preflight`, `parseSearchParams`, `CORS_HEADERS`, `getRequestId`.
+- `src/shared/errors.ts`: `AppError`, `toAppError`.
+- `src/shared/log.ts`: `log`.
+- `src/shared/env.ts`: `appUrl()`, `optionalEnv`.
+- `src/shared/money.ts`: `fromMinor` gives the Shopify `"25.00"` form; `acpPrice` gives `"25.00 USD"`; `formatMoney` is for display.
 
 **WS2** (`@/lib/crawl`):
 - `verifyOffer(variantId): Promise<Offer>` (`VerifyOfferFn`, 00 §6.7): a live re-check with an 8 s timeout that persists the new offer.
@@ -160,7 +160,7 @@ WS1's T+30 stubs throw `AppError("not_implemented")` or register nothing, so WS3
 
 ## 2. Conventions (apply to every route and tool)
 
-1. **Base URL** = `appUrl()` from `src/lib/env.ts` (`APP_URL`, then `https://$VERCEL_PROJECT_PRODUCTION_URL`, then `http://localhost:3000`). Every absolute URL we emit (profiles, llms.txt, openapi, `_shoperzero` links) uses it. For a tunnel demo, set `APP_URL` to the tunnel URL.
+1. **Base URL** = `appUrl()` from `src/shared/env.ts` (`APP_URL`, then `https://$VERCEL_PROJECT_PRODUCTION_URL`, then `http://localhost:3000`). Every absolute URL we emit (profiles, llms.txt, openapi, `_shoperzero` links) uses it. For a tunnel demo, set `APP_URL` to the tunnel URL.
 2. **IDs** (00 §4.2): plain uuids for products and variants in MCP/REST. `products.json` uses numeric `seq`. Refs accepted by `get_product` / `lookup_catalog` are the forms `db.getProduct` understands. There are no `sz:` or `gid://` prefixes.
 3. **Money:** integer minor units `{amount, currency}` everywhere. The exceptions are the Shopify-compat output (`fromMinor` → `"25.00"`) and the ACP feed (`acpPrice` → `"25.00 USD"`).
 4. **Timestamps:** ISO 8601 UTC with milliseconds everywhere, including `products.json` (00 §4.3).
@@ -170,7 +170,7 @@ WS1's T+30 stubs throw `AppError("not_implemented")` or register nothing, so WS3
    - Responses use WS1's `json()`/`text()`, which add the CORS headers from `CORS_HEADERS`.
    - Params are Promises: `const { slug } = await ctx.params`. Type `ctx` with the global `RouteContext<'/s/[slug]/products.json'>`, which `next dev`, `next build` and `next typegen` generate.
    - Keep the default Node runtime.
-6. **Caching** (`src/lib/agent/http.ts`). Do not use `'use cache'`; Cache Components is off. Use `Cache-Control`, which Vercel's CDN honors:
+6. **Caching** (`src/features/catalog/http.ts`). Do not use `'use cache'`; Cache Components is off. Use `Cache-Control`, which Vercel's CDN honors:
    ```ts
    export const CACHE = {
      none:   "no-store",
@@ -236,9 +236,9 @@ export { handle as GET, handle as POST, handle as DELETE };
 export const OPTIONS = mcpPreflight;
 ```
 
-`GET` and `DELETE` answer 405 from the stateless handler. That is correct, and clients handle it. The `(server)` parameter type is `McpServer` from `src/lib/mcp/types.ts` (00 §6.9). If `mcp-handler`'s typings don't expose it that way, use `import type { McpServer } from "@modelcontextprotocol/server"` (VERIFIED to be what mcp-handler 2.2.0 passes).
+`GET` and `DELETE` answer 405 from the stateless handler. That is correct, and clients handle it. The `(server)` parameter type is `McpServer` from `src/infrastructure/mcp/types.ts` (00 §6.9). If `mcp-handler`'s typings don't expose it that way, use `import type { McpServer } from "@modelcontextprotocol/server"` (VERIFIED to be what mcp-handler 2.2.0 passes).
 
-`withCors` and `mcpPreflight` in `src/lib/agent/http.ts`. The MCP response is a stream, so WS3 re-wraps it rather than using WS1's `json()` (the pattern is VERIFIED in the sandbox):
+`withCors` and `mcpPreflight` in `src/features/catalog/http.ts`. The MCP response is a stream, so WS3 re-wraps it rather than using WS1's `json()` (the pattern is VERIFIED in the sandbox):
 ```ts
 export function withCors(res: Response): Response {
   const h = new Headers(res.headers);
@@ -258,7 +258,7 @@ export function mcpPreflight(): Response {
 
 **Per-store MCP URL.** `{base}/api/mcp?store=<slug>` is the same server. Catalog tools read `?store=` from the request (`sdkCtx.http?.req?.url`) and use it when `catalog.store` is omitted. Per-store UCP profiles and llms.txt advertise this URL. The crawl and checkout tools ignore it.
 
-### 3.3 One logging and rate-limit wrapper for all three registrars (`src/lib/mcp/instrument.ts`)
+### 3.3 One logging and rate-limit wrapper for all three registrars (`src/infrastructure/mcp/instrument.ts`)
 
 `instrumentServer` replaces `registerTool` **on the server instance** (an own property, not a Proxy, so SDK internals keep their `this`). Every tool registered afterwards, from any registrar, is wrapped. The other registrars therefore must **not** log `agent_requests` themselves; otherwise each call is counted twice (CR-2).
 
@@ -306,7 +306,7 @@ export function instrumentServer(server: McpServer): McpServer {
 
 `tools/list` and `initialize` are not logged; only tool calls are. `sdkCtx.http.req` is VERIFIED to be the original request in mcp-handler 2.2.0. It may be undefined in fallback modes, and then logging loses only the user-agent.
 
-### 3.4 Catalog registrar skeleton (`src/lib/mcp/tools/catalog.ts`)
+### 3.4 Catalog registrar skeleton (`src/infrastructure/mcp/tools/catalog.ts`)
 
 ```ts
 import type { ToolRegistrar } from "@/lib/mcp/types";
@@ -336,7 +336,7 @@ export const registerCatalogTools: ToolRegistrar = (server) => {
 
 Input schemas are 00 §6.8's exported schemas, passed as `inputSchema` unchanged. Do not declare `outputSchema` (00 §4.5).
 
-### 3.5 `src/lib/mcp/instructions.ts`
+### 3.5 `src/infrastructure/mcp/instructions.ts`
 
 ```ts
 export const MCP_INSTRUCTIONS = `ShoperZero indexes online stores that are not on Shopify (WooCommerce, Magento, BigCommerce, Squarespace, Salesforce Commerce Cloud, custom) and exposes them with the same tool names as Shopify's UCP catalog MCP.
@@ -400,7 +400,7 @@ Only `route.ts` and `instrument.ts` change; every registrar stays as it is.
 Catalog outputs (B7): `structuredContent` equals the REST twin's JSON body, and product-bearing bodies use the UCP product shape (§6.4). Search and product bodies start with a `ucp` envelope that mirrors Shopify's live responses:
 
 ```ts
-// src/lib/formats/ucp.ts
+// src/features/catalog/formats/ucp.ts
 export function ucpEnvelope(capabilities: string[]) {
   return {
     version: UCP_VERSION, status: "success",
@@ -517,7 +517,7 @@ Set verify: true to re-check the live price and stock on the merchant's site bef
 2. If the ref is one of the product's variant ids, treat that variant's options as `selected` (unless `selected` was given).
 3. With `selected`, keep only variants whose options match every pair (case-insensitive); if none match, keep all and add the warning `no_matching_variant`. Compute `options[].values[]` as `{label, exists, available}`: `exists` = some variant matches `selected` with this option set to this value; `available` = one of those variants is available. Echo `selected` on the product.
 4. Map with `toUcpProduct(p, "full")` (all variants, capped at 100).
-5. `verify: true` → `verifyVariants(product, variantIds)` from `src/lib/agent/verify.ts`:
+5. `verify: true` → `verifyVariants(product, variantIds)` from `src/features/catalog/verify.ts`:
    - Call `verifyOffer(id)` for up to 5 of the remaining variants (available ones first), in parallel, with an 8 s overall `Promise.race`.
    - On success: compare with the indexed offer, overwrite the variant's `price`, `list_price`, `availability` and `_shoperzero.checked_at`, and set `_shoperzero.verified: true`. If the price changed, add `{type:"info", code:"price_changed", content:"M: was 45.00 USD, now 42.00 USD"}`. If availability changed, add `availability_changed`.
    - `AppError` `not_implemented` (WS2 not landed) adds the warning `verify_unavailable`.
@@ -567,7 +567,7 @@ Use it to see which stores exist, to pick a store slug for search_catalog, or to
 
 ### 4.5 Crawl and scan tools (owned by WS2; reference only)
 
-Registered by `registerCrawlTools(server)` in `src/lib/crawl/mcp-tools.ts`. Schemas, descriptions and behavior live in spec 02. WS3's round-1 `index_store`/`get_crawl_status` definitions moved there verbatim (B4).
+Registered by `registerCrawlTools(server)` in `src/features/crawl/mcp-tools.ts`. Schemas, descriptions and behavior live in spec 02. WS3's round-1 `index_store`/`get_crawl_status` definitions moved there verbatim (B4).
 
 | Tool | Input | Output | REST twin |
 |---|---|---|---|
@@ -584,11 +584,11 @@ WS3's only obligations:
 
 ### 4.6 Checkout tools (owned by WS4; reference only)
 
-Registered by `registerCheckoutTools(server)` in `src/lib/checkout/mcp-tools.ts`, with schemas and descriptions from spec 04 §12 and 00 §6.8. Tools: `create_checkout`, `update_checkout`, `get_checkout`, `complete_checkout`, `cancel_checkout` and `get_order`. Each returns a `CheckoutSession` (`get_order` returns an `Order`). Errors use `toolError`. Every session carries the `timeline_url` message.
+Registered by `registerCheckoutTools(server)` in `src/features/checkout/mcp-tools.ts`, with schemas and descriptions from spec 04 §12 and 00 §6.8. Tools: `create_checkout`, `update_checkout`, `get_checkout`, `complete_checkout`, `cancel_checkout` and `get_order`. Each returns a `CheckoutSession` (`get_order` returns an `Order`). Errors use `toolError`. Every session carries the `timeline_url` message.
 
 WS3 must not register any of these names; a duplicate name throws at startup. Before WS4's service lands, WS1's T+30 stub registers nothing, or WS4's day-one file returns handoff sessions (CR-2b).
 
-### 4.7 When checkout is advertised (`src/lib/agent/checkout-status.ts`)
+### 4.7 When checkout is advertised (`src/features/catalog/checkout-status.ts`)
 
 This is the single switch read by the profiles, llms.txt and openapi:
 
@@ -611,7 +611,7 @@ export const agentCheckoutFor = (s: Pick<Store, "domain" | "platform">) =>
 ```
 If `resolveCheckoutConnector` is not exported yet when WS3 builds this, temporarily use `s.checkout_connector !== "handoff"` and switch once WS4 exports it.
 
-### 4.8 Optional scan info (`src/lib/agent/scan-info.ts`)
+### 4.8 Optional scan info (`src/features/catalog/scan-info.ts`)
 
 ```ts
 export interface ScanInfo { grade: ReadinessGrade; best_method: AccessMethod | "none"; report_url: string; scanned_at: string }
@@ -628,7 +628,7 @@ Only per-store surfaces call it: one query per request. The root llms.txt uses `
 
 ---
 
-## 5. Search (`catalogSearch` in `src/lib/agent/search.ts`)
+## 5. Search (`catalogSearch` in `src/features/catalog/search.ts`)
 
 1. **Store:**
    - `ref = catalog.store ?? defaultStore`.
@@ -667,7 +667,7 @@ Stretch: hybrid pgvector + RRF behind the same signature (01 §13).
 
 ## 6. Output formats
 
-Serializers are pure functions from `IndexedProduct` / `Store` (no DB access) in `src/lib/formats/*`. Shared helpers in `src/lib/formats/text.ts`:
+Serializers are pure functions from `IndexedProduct` / `Store` (no DB access) in `src/features/catalog/formats/*`. Shared helpers in `src/features/catalog/formats/text.ts`:
 
 ```ts
 export const stripHtml = (h: string) => h.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<br\s*\/?>|<\/p>/gi, "\n")
@@ -678,7 +678,7 @@ export const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, 
 export const plainDescription = (p: IndexedProduct) => p.description_text ?? (p.description_html ? stripHtml(p.description_html) : "");
 export const isAvailable = (v: IndexedVariant) => v.offer.availability === "in_stock" || v.offer.availability === "preorder";
 ```
-Money strings come from WS1's `src/lib/money.ts`: `fromMinor` gives the Shopify `"25.00"` form, `acpPrice` gives `"25.00 USD"`, and `formatMoney` is for display in llms.txt. Timestamps are emitted as stored (ISO with milliseconds, 00 §4.3). `{base}` below is `appUrl()`.
+Money strings come from WS1's `src/shared/money.ts`: `fromMinor` gives the Shopify `"25.00"` form, `acpPrice` gives `"25.00 USD"`, and `formatMoney` is for display in llms.txt. Timestamps are emitted as stored (ISO with milliseconds, 00 §4.3). `{base}` below is `appUrl()`.
 
 ### 6.1 `GET /s/{slug}/products.json` (Shopify-compatible list)
 
@@ -834,7 +834,7 @@ Example line:
 
 ### 6.4 UCP product shape (MCP and REST output)
 
-`toUcpProduct(p, mode: "summary" | "full", opts?: { variantIds?: string[]; score?: number })` in `src/lib/formats/ucp.ts`. The structure mirrors Shopify's live UCP MCP responses (§0). ShoperZero extras live under `_shoperzero`.
+`toUcpProduct(p, mode: "summary" | "full", opts?: { variantIds?: string[]; score?: number })` in `src/features/catalog/formats/ucp.ts`. The structure mirrors Shopify's live UCP MCP responses (§0). ShoperZero extras live under `_shoperzero`.
 
 | UCP key | Source | summary mode | full mode |
 |---|---|---|---|
@@ -871,7 +871,7 @@ Example line:
 | `inputs` | lookup_catalog only |
 | `_shoperzero` | `{ seq: v.seq, checked_at: v.offer.checked_at, inventory_quantity: v.inventory_quantity, verified?: true }` |
 
-`cartPermalink(store, product, variant, qty)` in `src/lib/formats/permalink.ts` (pure; WS4's handoff connector may import it):
+`cartPermalink(store, product, variant, qty)` in `src/features/catalog/formats/permalink.ts` (pure; WS4's handoff connector may import it):
 ```ts
 const num = (s: string | null | undefined) => (s && /^\d+$/.test(s) ? s : null);
 export function cartPermalink(store: { domain: string; platform: Platform }, p: { url: string; external_id: string | null },
@@ -892,7 +892,7 @@ Note: `Store.domain` is an identity key without `www.` and may carry a locale pa
 
 ### 6.5 llms.txt
 
-Both routes: `Content-Type: text/plain; charset=utf-8` (renders in browsers; the llmstxt.org format is Markdown content), CORS, `Link` header, caching `CACHE.index` (root) or `storeCache(store)` (store). Log `llms_txt` with tool `root` / `store`. Render with template literals in `src/lib/formats/llms.ts`. `{base}` = `appUrl()`. Omit a line entirely when its value is unknown. Unknown or opted-out slug → `404 Not found` (text).
+Both routes: `Content-Type: text/plain; charset=utf-8` (renders in browsers; the llmstxt.org format is Markdown content), CORS, `Link` header, caching `CACHE.index` (root) or `storeCache(store)` (store). Log `llms_txt` with tool `root` / `store`. Render with template literals in `src/features/catalog/formats/llms.ts`. `{base}` = `appUrl()`. Omit a line entirely when its value is unknown. Unknown or opted-out slug → `404 Not found` (text).
 
 **Root `/llms.txt` template (exact):**
 ```
@@ -995,7 +995,7 @@ Prices are integers in ISO 4217 minor units: {"amount": 2500, "currency": "USD"}
 
 ### 6.6 UCP profiles
 
-`buildUcpProfile({ base, store?: Store, version = UCP_VERSION })` in `src/lib/formats/ucp.ts`. Structure mirrors the live Shopify profile (VERIFIED): top-level `ucp` with `version`, `supported_versions`, `services["dev.ucp.shopping"][]`, `capabilities{}`, `payment_handlers{}`. No `signing_keys` (Shopify serves none either).
+`buildUcpProfile({ base, store?: Store, version = UCP_VERSION })` in `src/features/catalog/formats/ucp.ts`. Structure mirrors the live Shopify profile (VERIFIED): top-level `ucp` with `version`, `supported_versions`, `services["dev.ucp.shopping"][]`, `capabilities{}`, `payment_handlers{}`. No `signing_keys` (Shopify serves none either).
 
 ```ts
 import { UCP_SUPPORTED_VERSIONS, UCP_VERSION } from "@/lib/contracts";   // ["2026-08-25", "2026-04-08"]
@@ -1088,7 +1088,7 @@ Headers: JSON, CORS, `CACHE.static`. `logHit("agent_card")` (00 `AgentSurface` i
 
 ### 6.8 `/openapi.json`
 
-`buildOpenApi(base)` in `src/lib/formats/openapi.ts` returns an OpenAPI **3.1.0** object. `info: { title: "ShoperZero API", version: "0.1.0", description: "Read API for the ShoperZero cross-store product index. Prices are integer minor units." }`, `servers: [{ url: base }]`. Keep it under 30 operations (GPT Actions limit). Operations (`operationId` in parentheses):
+`buildOpenApi(base)` in `src/features/catalog/formats/openapi.ts` returns an OpenAPI **3.1.0** object. `info: { title: "ShoperZero API", version: "0.1.0", description: "Read API for the ShoperZero cross-store product index. Prices are integer minor units." }`, `servers: [{ url: base }]`. Keep it under 30 operations (GPT Actions limit). Operations (`operationId` in parentheses):
 
 - `GET /api/v1/search` (`searchProducts`): query params `q, store, min, max, available (true|false|any), brand (repeatable), limit, cursor`.
 - `GET /api/v1/products/{id}` (`getProduct`): `verify, format (ucp|indexed), selected (repeatable "Name:Label")`.
@@ -1197,7 +1197,7 @@ The response body **is a `Store`** (WS5 reads it as `Store` in its polling fallb
 
 ## 8. Request logging and rate limits
 
-### 8.1 `logHit` (`src/lib/agent/log.ts`)
+### 8.1 `logHit` (`src/features/catalog/log.ts`)
 
 ```ts
 import { after } from "next/server";
@@ -1230,7 +1230,7 @@ What gets logged, one row each:
 
 `robots.txt` is not logged. Logging failures never affect the response.
 
-### 8.2 Rate-limit stance (`src/lib/agent/ratelimit.ts`)
+### 8.2 Rate-limit stance (`src/features/catalog/ratelimit.ts`)
 
 The index is public and read-only, so there is no auth. A best-effort, per-instance, in-memory token bucket protects against runaway agent loops and against repeated crawl or scan launches. It is **not** a security boundary, because serverless instances do not share memory.
 
@@ -1272,7 +1272,7 @@ call() { mcp "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\"
 WS3 builds against the WS1 seed (1 store, 3 products) until the crawler works.
 
 ### M1: MCP route alive with all three registrars composed (T+0:30 → T+1:15)
-Build: `instrument.ts`, `instructions.ts`, `tools/catalog.ts` (`list_stores` first), the route, `src/lib/agent/{http,log,ratelimit}.ts`. The crawl and checkout registrars are WS1's T+30 stubs at this point.
+Build: `instrument.ts`, `instructions.ts`, `tools/catalog.ts` (`list_stores` first), the route, `src/features/catalog/{http,log,ratelimit}.ts`. The crawl and checkout registrars are WS1's T+30 stubs at this point.
 ```bash
 mcp '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' '.result.tools | map(.name)'
 # now: the 4 catalog tools (+ whatever WS2/WS4 have registered)
@@ -1422,7 +1422,7 @@ Claude Desktop demo prompts:
 |---|---|---|
 | mcp-handler v2 inside the real repo | VERIFIED in a sandbox with the same versions (`next@16.3.6`, `next dev` and `next build`) | Fallback A (SDK `createMcpHandler`), then B (v1) (§3.7) |
 | `instrumentServer` patching `registerTool` on the instance | Standard JS own-property override; not run against WS2/WS4 code yet | If a registrar captured `server.registerTool` before instrumentation, call `instrumentServer` first (the route already does) |
-| `McpServer` type derivation in `src/lib/mcp/types.ts` (00 §6.9) | UNVERIFIED against mcp-handler typings | `import type { McpServer } from "@modelcontextprotocol/server"` |
+| `McpServer` type derivation in `src/infrastructure/mcp/types.ts` (00 §6.9) | UNVERIFIED against mcp-handler typings | `import type { McpServer } from "@modelcontextprotocol/server"` |
 | Claude Desktop custom connector menu wording | UNVERIFIED | `mcp-remote` bridge config (§3.6) |
 | Inspector v2 CLI on Node 20 | Inspector needs Node ≥ 22.19 | `nvm use` (repo pins 22) or `@modelcontextprotocol/inspector@v1-latest` |
 | Woo `?add-to-cart=<purchasable id>` for variations | UNVERIFIED on all Woo versions | PDP fallback in `cartPermalink`; WS4's handoff owns the real `continue_url` |
@@ -1454,9 +1454,9 @@ Round-1 CRs that DECISIONS accepted or superseded are marked. Everything else is
   - (a) Do **not** call `logAgentRequest` from `registerCrawlTools` / `registerCheckoutTools`. WS3's `instrumentServer` logs every tool call once, with its store id when `structuredContent` carries `store.id` / `store_id`. This supersedes 00 §4.5's per-tool logging line for the MCP surface; REST routes still log themselves.
   - (b) WS4, carried over from round 1: accept the UCP/Shopify line-item form `{ item: { id }, quantity }` alongside `{ variant_id, quantity }`. Until the service is ready, return a handoff `requires_escalation` session rather than `not_implemented` (synthesis §5). Set `destructiveHint: true` on `complete_checkout`.
 - **CR-3 (ownership):** WS3 also owns:
-  - `src/lib/mcp/instrument.ts`, `src/lib/mcp/instructions.ts`;
-  - `src/lib/agent/**`;
+  - `src/infrastructure/mcp/instrument.ts`, `src/infrastructure/mcp/instructions.ts`;
+  - `src/features/catalog/**`;
   - `src/app/.well-known/ucp/[version]/route.ts`;
-  - `src/lib/formats/{llms,permalink,openapi,agent-card,text}.ts`, in addition to 00 §3.1's `formats/{shopify,ucp,acp}.ts`.
+  - `src/features/catalog/formats/{llms,permalink,openapi,agent-card,text}.ts`, in addition to 00 §3.1's `formats/{shopify,ucp,acp}.ts`.
 - **CR-4 (WS1, optional):** expose DECISIONS §A's `stores.best_method` on `Store`/`StoreSummary` (for example `best_method: AccessMethod | "none" | null`), so `list_stores` and the root llms.txt can show it without per-store scan queries. Without it, those two surfaces show only the grade.
 - **CR-5 (optional, WS3 migration):** `agent_requests.agent_profile text`; until then the profile is only logged via `log.info`.

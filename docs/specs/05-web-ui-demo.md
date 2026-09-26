@@ -108,7 +108,7 @@ mock/fixtures/*.ts           typed fixtures (§9)
 mock/fixtures/shots.ts       offline SVG screenshot generator for computer-use fixtures
 mock/recorded/*.json         real runs exported after rehearsal
 mock/seed-ui.sql             optional local seed
-mock/index.html              EXISTING earlier-concept design mock. Keep it and do not edit it.
+demos/prototypes/original/index.html              EXISTING earlier-concept design mock. Keep it and do not edit it.
                              It is the visual reference for §8.
 
 docs/demo/runbook.md  docs/demo/script.md  docs/demo/qa.md   (copied from §10)
@@ -905,7 +905,7 @@ ShoperZero sits between a store and an agent, so the UI reads like an instrument
 - strict status colors (good, warn, serious, bad) used only for state;
 - mono type for anything an agent consumes (URLs, selectors, ids, counters), sans for text a human reads.
 
-The two signature moments are the **cascade** (cards lighting up left to right, the computer-use frame streaming screenshots) and the **grade flip D → A**. The visual language comes from `mock/index.html`: cards, pills, the shimmer rail, the live pill, the score ring and the hero beam. The earlier mock and the product therefore look like one system.
+The two signature moments are the **cascade** (cards lighting up left to right, the computer-use frame streaming screenshots) and the **grade flip D → A**. The visual language comes from `demos/prototypes/original/index.html`: cards, pills, the shimmer rail, the live pill, the score ring and the hero beam. The earlier mock and the product therefore look like one system.
 
 ### 8.2 Typography
 
@@ -1006,7 +1006,7 @@ body { background: var(--page); color: var(--ink); font-family: var(--font-sans)
 | **CodeBlock** | `bg-code text-code-ink rounded-xl p-4 font-mono text-[12.5px]` plus a copy button |
 | **CopyButton** | `navigator.clipboard.writeText`; the icon becomes a check for 1.5 s; `aria-label="Copy"` |
 | **Comparison bars** | log-scale width: `Math.max(4, 100 * Math.log10(1 + v) / Math.log10(1 + max))` % |
-| **Hero beam** | landing only, optional: the conic sweep from `mock/index.html` `.beam` |
+| **Hero beam** | landing only, optional: the conic sweep from `demos/prototypes/original/index.html` `.beam` |
 | **Icons** | 12 inline SVGs in `ui/icons.tsx`: arrow-right, external, copy, check, x, refresh, bolt, lock, store, globe, cursor, code |
 
 ### 8.5 Layout
