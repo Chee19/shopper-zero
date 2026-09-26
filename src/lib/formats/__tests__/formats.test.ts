@@ -181,12 +181,13 @@ describe("UCP profile", () => {
     const pr = buildUcpProfile({
       base: BASE,
       store: { slug: "a-b" },
-      checkout: { rails: ["stripe_spt", "x402"], stripeEnvironment: "test", x402Network: "eip155:84532", x402Facilitator: "https://x402.org/facilitator" },
+      checkout: { rails: ["stripe_spt", "x402"] },
     });
     assert.equal(pr.ucp.services["dev.ucp.shopping"][0].endpoint, `${BASE}/api/mcp?store=a-b`);
     assert.deepEqual(pr.ucp.supported_versions, {});
     assert.ok("dev.ucp.shopping.fulfillment" in pr.ucp.capabilities);
-    assert.deepEqual(Object.keys(pr.ucp.payment_handlers), ["app.shoperzero.stripe_spt", "app.shoperzero.x402"]);
+    // Stripe-only MVP: x402 is never advertised, even if listed.
+    assert.deepEqual(Object.keys(pr.ucp.payment_handlers), ["app.shoperzero.stripe_spt"]);
   });
   it("versioned root profile substitutes the version and drops supported_versions", () => {
     const v = OLDER_UCP_VERSIONS[0];
