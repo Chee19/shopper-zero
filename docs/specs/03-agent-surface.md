@@ -118,7 +118,7 @@ src/lib/agent/scan-info.ts    scanInfo(store): optional scan grade / best_method
 
 ### 1.4 What WS3 consumes
 
-**Contracts** (`@/lib/contracts`, 00 §6): `Money, Platform, CheckoutConnectorId, PaymentRailId, AgentSurface, UCP_VERSION, UCP_SUPPORTED_VERSIONS, ACP_VERSION, PAYMENT_HANDLER_IDS, X402_NETWORKS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, LOOKUP_MAX_IDS, LIST_STORES_MAX_LIMIT, PRODUCTS_JSON_DEFAULT_LIMIT, PRODUCTS_JSON_MAX_LIMIT, Offer, IndexedVariant, IndexedProduct, ProductSummary, SearchParams, SearchResult, Store, StoreSummary, StoreRef, CrawlRun, ReadinessGrade, ToolResult, UcpMetaSchema, ListStoresInputSchema, SearchCatalogInputSchema, LookupCatalogInputSchema, GetProductInputSchema, ApiErrorCode`, and from `src/lib/contracts/scan.ts` (DECISIONS §A): `ScanReport, AccessMethod`.
+**Contracts** (`@/lib/contracts`, 00 §6): `Money, Platform, CheckoutConnectorId, PaymentRailId, AgentSurface, UCP_VERSION, UCP_SUPPORTED_VERSIONS, ACP_VERSION, PAYMENT_HANDLER_IDS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, LOOKUP_MAX_IDS, LIST_STORES_MAX_LIMIT, PRODUCTS_JSON_DEFAULT_LIMIT, PRODUCTS_JSON_MAX_LIMIT, Offer, IndexedVariant, IndexedProduct, ProductSummary, SearchParams, SearchResult, Store, StoreSummary, StoreRef, CrawlRun, ReadinessGrade, ToolResult, UcpMetaSchema, ListStoresInputSchema, SearchCatalogInputSchema, LookupCatalogInputSchema, GetProductInputSchema, ApiErrorCode`, and from `src/lib/contracts/scan.ts` (DECISIONS §A): `ScanReport, AccessMethod`.
 
 **DB helpers** (`@/lib/db`, 00 §6.10 + DECISIONS B12). Behavior per 01 §6.3:
 
@@ -599,11 +599,10 @@ import { resolveCheckoutConnector } from "@/lib/checkout/connectors";   // B10
 /** WS3 flips this to true once WS4's MCP checkout milestone (04 M6) passes end to end. */
 export const CHECKOUT_TOOLS_LIVE = false;
 
-/** Same env rules as WS4's paymentHandlers(): Stripe if a key is set, x402 if a pay-to address is set. */
+/** Same env rules as WS4's paymentHandlers(): Stripe only when a test key is configured. */
 export function enabledRails(): PaymentRailId[] {
   const r: PaymentRailId[] = [];
-  if (process.env.STRIPE_SECRET_KEY) r.push("stripe_spt");
-  if (process.env.X402_PAY_TO) r.push("x402");
+  if (process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")) r.push("stripe_spt");
   return r;
 }
 
@@ -990,7 +989,7 @@ Prices are integers in ISO 4217 minor units: {"amount": 2500, "currency": "USD"}
 - [Store page]({store.urls.page}): human view on ShoperZero
 - [All ShoperZero stores]({base}/llms.txt)
 ```
-- `storeCheckoutLine`: live connector (`agentCheckoutFor(store)`) → `Agents can buy headlessly through ShoperZero. create_checkout returns "ready_for_complete"; pay with a Stripe Shared Payment Token or x402 USDC (see payment.handlers).` Otherwise → `Headless checkout is not available. create_checkout returns "requires_escalation" with continue_url, a prefilled cart or product page on the merchant's site where the buyer finishes.`
+- `storeCheckoutLine`: live connector (`agentCheckoutFor(store)`) → `Agents can buy headlessly through ShoperZero. create_checkout returns "ready_for_complete"; pay with a Stripe test Shared Payment Token (see payment.handlers).` Otherwise → `Headless checkout is not available. create_checkout returns "requires_escalation" with continue_url, a prefilled cart or product page on the merchant's site where the buyer finishes.`
 - If `status` is `failed` or `blocked`, add the line `Note: the last crawl did not complete ({status}); data may be partial.` after `Index status`.
 - Optional scan line, only when `scanInfo(store)` returns data (§4.8), inserted after `Index status`: `Agent readiness scan: grade {grade} on its own (best access method: {best_method}); via ShoperZero: grade {store.readiness.after?.grade ?? "A"}. Report: {report_url}`. `best_method` is one of `api`, `dom`, `computer_use`, `none` (DECISIONS §A).
 
@@ -1037,16 +1036,12 @@ Capabilities we claim:
       "app.shoperzero.stripe_spt": [{
         "id": "app.shoperzero.stripe_spt", "version": "2026-09-26", "spec": "https://<app>/llms.txt",
         "config": { "rail": "stripe_spt", "accepted": ["card"], "credential_type": "spt", "environment": "test" }
-      }],
-      "app.shoperzero.x402": [{
-        "id": "app.shoperzero.x402", "version": "2026-09-26", "spec": "https://x402.org",
-        "config": { "rail": "x402", "scheme": "exact", "network": "eip155:84532", "asset": "USDC", "flow": "upfront", "facilitator": "https://x402.org/facilitator" }
       }]
     }
   }
 }
 ```
-- `x402.config.network` = `process.env.X402_NETWORK ?? "eip155:84532"`; `facilitator` = `process.env.X402_FACILITATOR_URL ?? "https://x402.org/facilitator"`. `environment` = `"live"` only if `STRIPE_SECRET_KEY` starts with `sk_live_`, else `"test"`.
+- `environment` is always `"test"`. Advertise the Stripe handler only when the configured key starts with `sk_test_`.
 - Handler entry `id` equals the key and equals `PAYMENT_HANDLER_IDS[rail]`, so `PaymentInstrument.handler_id` matches both the profile and `CheckoutSession.payment.handlers[].id`.
 - Without live checkout: `capabilities` has only the two catalog entries and `payment_handlers` is `{}` (required member, may be empty).
 
@@ -1085,7 +1080,7 @@ A static-content card built per request (for `base`). We do **not** run an A2A s
   "skills": [
     { "id": "search_products", "name": "Search products", "description": "Search the cross-store catalog (MCP tool search_catalog).", "tags": ["shopping", "catalog", "ucp"], "examples": ["find a black hoodie under $50"] },
     { "id": "product_detail", "name": "Product detail", "description": "Variants, live price and stock (MCP tool get_product).", "tags": ["shopping", "catalog"] },
-    { "id": "checkout", "name": "Checkout", "description": "Create and complete a checkout paid by Stripe SPT or x402, or hand off to the merchant (MCP tools create_checkout, complete_checkout).", "tags": ["shopping", "checkout", "payments"] }
+    { "id": "checkout", "name": "Checkout", "description": "Create and complete a checkout paid by Stripe test payments, or hand off to the merchant (MCP tools create_checkout, complete_checkout).", "tags": ["shopping", "checkout", "payments"] }
   ]
 }
 ```
@@ -1104,7 +1099,7 @@ Headers: JSON, CORS, `CACHE.static`. `logHit("agent_card")` (00 `AgentSurface` i
 - `POST /api/v1/scans` (`scanStore`, WS2): body `{ url, mode? }` → 202 `{ scan_id, store_id, status_url }`.
 - `GET /api/v1/scans/{id}` (`getScan`, WS2) → `ScanReport`.
 - `GET /s/{slug}/products.json` (`listStoreProductsShopify`): `limit, page`.
-- Only when `CHECKOUT_TOOLS_LIVE`: `POST /api/v1/checkouts` (`createCheckout`), `GET /api/v1/checkouts/{id}` (`getCheckout`), `PUT /api/v1/checkouts/{id}` (`updateCheckout`), `POST /api/v1/checkouts/{id}/complete` (`completeCheckout`), `POST /api/v1/checkouts/{id}/cancel` (`cancelCheckout`), `GET /api/v1/orders/{id}` (`getOrder`). Omit the x402 pay route (`/pay/x402`); it is a 402 endpoint for x402 clients, not a GPT Action. Request bodies reference the same shapes as the MCP args minus `meta`; responses reference `CheckoutSession`.
+- Only when `CHECKOUT_TOOLS_LIVE`: `POST /api/v1/checkouts` (`createCheckout`), `GET /api/v1/checkouts/{id}` (`getCheckout`), `PUT /api/v1/checkouts/{id}` (`updateCheckout`), `POST /api/v1/checkouts/{id}/complete` (`completeCheckout`), `POST /api/v1/checkouts/{id}/cancel` (`cancelCheckout`), `GET /api/v1/orders/{id}` (`getOrder`). Request bodies reference the same shapes as the MCP args minus `meta`; responses reference `CheckoutSession`.
 
 `components.schemas`: `Money {amount:integer, currency:string}`, `UcpVariant`, `UcpProduct`, `SearchResponse {ucp, products[], pagination{cursor, has_next_page, total_count}, messages[]}`, `StoreSummary`, `Store`, `CrawlRun`, `ScanReport` (summary level), `Error {error{code, message, details?, request_id?}}` (00 §4.4), `Message`, and when checkout is live, `CheckoutSession`. Hand-write these (about 150 lines); do not add a zod-to-openapi dependency. Headers: JSON, CORS, `CACHE.static`. `logHit("openapi")`.
 

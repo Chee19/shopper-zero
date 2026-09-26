@@ -1,6 +1,16 @@
-# Binding decisions (round 2)
+# Binding decisions (hackathon MVP)
 
 These decisions settle every conflict between specs 00–05 and add the **scan-and-score** feature. Where a spec disagrees with this file, this file wins. Spec 00 folds these in as the canonical contracts.
+
+## MVP payment scope — 26 September 2026
+
+The hackathon MVP uses **Stripe test payments only**. This decision supersedes the earlier two-rail plan and B6 below. x402 is removed from the MVP, including any stretch target: no facilitator, crypto wallet, wallet funding, testnet, payment route, SDK dependencies, credential type, payment handler, demo act or acceptance test. Historical research remains background only.
+
+- Keep the WooCommerce demo store, Stripe SPT (with the explicitly labelled test PaymentMethod fallback), checkout lifecycle, idempotency, failure handling and merchant handoff.
+- Keep `wallet_issue_spt` as a test-token helper; it needs no blockchain wallet or private key.
+- Pierre's order: Stripe feasibility check + Woo setup → checkout tools and one working purchase → scanning and ingestion. Allen retains foundation, protocol surface and UI ownership.
+- Rehearse one paid path. An unsupported merchant returns `requires_escalation`; never claim a purchase succeeded on the basis of catalogue indexing alone.
+- The live event page specifies **16:30 code freeze** and **three-minute finalist demos at 17:30**. Reserve the final build period for deployment and rehearsal.
 
 ## A. New feature: scan and score (the entry experience)
 
@@ -90,7 +100,7 @@ export type ScanReport = {
 | 3 | Claim tokens | 00 wins: a service-role-only `store_claims` table. There is no `stores.claim_token`. WS5's claim API reads and writes through service-role helpers. |
 | 4 | Crawl/scan MCP tools | Registrars are per stream: `registerCrawlTools(server)` (WS2: `index_store`, `get_crawl_status`, `scan_store`, `get_scan`), `registerCheckoutTools(server)` (WS4, including `get_order`), and WS3's catalog tools. WS3's `/api/mcp` route composes all three. The tool schemas WS3 already wrote move verbatim into WS2's spec. |
 | 5 | `CheckoutConnector.quote` | Takes `QuoteInput` (00). `continueUrl(store, lines)` (00). `CheckoutState` includes `handoff`, which maps to `requires_escalation`. WS4 adapts. |
-| 6 | x402 pay route | `POST /api/v1/checkouts/{id}/pay/x402` (WS4 CCR-W4-1 accepted). |
+| 6 | Payment scope | Stripe test payments only. The former second payment route is removed by the MVP decision above. |
 | 7 | MCP/REST product shape | The UCP product shape is the default; raw `IndexedProduct` is available via `?format=indexed` (WS3 CR-8 accepted). `structuredContent` equals the REST body. |
 | 8 | `/api/mcp` `maxDuration` | 300 (WS2 CCR-7 accepted). |
 | 9 | Woo ids | `variant.external_id` is the Store API purchasable id; `product.external_id` is the Woo product id (CCR-W4-4 accepted). |

@@ -3,7 +3,9 @@
 Make any non-Shopify e-commerce store agent-ready.
 
 - **Discoverability** — crawl a store (sitemaps, JSON-LD, platform APIs, feeds) and expose a normalized, `products.json`-style index that agents can scan and search.
-- **Checkout** — let agents complete purchases through a unified checkout layer (Stripe agentic payments, x402, or the store's native flow).
+- **Checkout** — let agents complete purchases through a unified checkout layer (Stripe test payments or a handoff to the store's native checkout).
+
+Hackathon MVP: scan → report → publish an agent-readable catalogue → complete one Stripe test purchase on our WooCommerce demo store. See [the specs](docs/specs/README.md).
 
 ## Stack
 

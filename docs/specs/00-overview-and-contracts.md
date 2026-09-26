@@ -4,13 +4,17 @@ Status: **canonical**. Specs 01–05 build on this file. Where this file and `do
 
 Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_modules/next/dist/docs/` before writing any route handler, `proxy.ts` change, `after()` call or segment config.
 
+## MVP scope
+
+Stripe test payments are the only payment rail. See DECISIONS.md for the current scope and TEAM-SPLIT.md for the event deadlines.
+
 ## Round-2 changes
 
 `docs/specs/DECISIONS.md` is binding and overrides any text here that disagrees with it. This file folds it in as follows:
 
 - **Scan and score (DECISIONS §A).** New contract file `src/lib/contracts/scan.ts` (§6.5a), exported from the barrel. `Store` gains `best_method`, `dom_recipe`, `latest_scan_id` (and `claimed_at`, WS5 CCR-8). New `scans` table, `stores` columns and the public `scan-screenshots` storage bucket (spec 01 §4). New routes `POST /api/v1/scans`, `GET /api/v1/scans/{id}` and MCP tools `scan_store`, `get_scan` (all WS2). New env vars (§4.7). The demo now opens with scan and score (§2).
 - **Ownership (B1, B4, WS3 CR-3, WS5 CCR-9).** WS2 owns `src/lib/scan/**`, `src/app/api/v1/scans/**`, and both `GET` and `POST` in `src/app/api/v1/stores/route.ts`. Registrars are per stream and `/api/mcp` composes them behind WS3's `instrumentServer` (§3.3, §6.9).
-- **Contract changes (B5, B7, B9, B11, B14, WS4 CCR-W4-8).** `CheckoutEventData` (§6.6); `timeline_url` message code; `CrawlLogEntry` is `{at, step?, level, msg, data?}` (capped at 50); MCP/REST catalog outputs use the UCP product shape (`?format=indexed` for `IndexedProduct`); `get_product` accepts `catalog.selected`; the x402 pay route is `POST /api/v1/checkouts/{id}/pay/x402`; Woo id mapping is pinned (§4.2). `CheckoutState` already had `handoff` and `quote()` already took `QuoteInput`.
+- **Contract changes (B5, B7, B9, B11, B14, WS4 CCR-W4-8).** `CheckoutEventData` (§6.6); `timeline_url` message code; `CrawlLogEntry` is `{at, step?, level, msg, data?}` (capped at 50); MCP/REST catalog outputs use the UCP product shape (`?format=indexed` for `IndexedProduct`); `get_product` accepts `catalog.selected`; Woo id mapping is pinned (§4.2). `CheckoutState` already had `handoff` and `quote()` already took `QuoteInput`.
 - **db helpers (B12, 02 §15.3).** Adds `rowToStore`, `findProducts`, `getIndexStats`, `getScan`, `upsertScan`, `claimScan`, `getLatestScanForStore`, `getActiveScanForStore`, `countActiveScans`, `supersedeScans`, `uploadScanScreenshot`, `claimCrawlRun`, `getActiveCrawlRun`, `countActiveCrawlRuns`, `getVariantForVerify`, `getOrCreateClaim`, and WS2 CCR-1's `upsertStoreProducts` semantics (variants are never deleted, per-product failures are reported, unchanged products are skipped) (§6.10).
 - **Error envelope (B11).** Unchanged: `{error: {code, message, details?}}` with the §4.4 code table. Stream-specific reasons go in `details.reason` (§4.4).
 
@@ -21,7 +25,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 1. ShoperZero makes any non-Shopify store agent-ready in about 60 seconds, with no plugin and no replatforming.
 2. Paste a store URL and hit **Scan**. A discovery agent tries three access methods in order (`api` → `dom` → `computer_use`), stops at the first that works, and shows an **Agent Readiness Score** with the cost and time per agent task. "Make it agent-ready" then indexes the store with the best method found: we detect the platform, pull the catalog the cheapest way that works (platform API, then sitemap + JSON-LD / DOM recipe), and normalize it into Supabase.
 3. From that single index we serve what Shopify stores get for free: a Shopify-compatible `products.json`, a UCP profile (`/.well-known/ucp`), an MCP server that uses Shopify's catalog tool names, an ACP feed, and `llms.txt`.
-4. Agents can also buy. They pay ShoperZero with a Stripe Shared Payment Token (test mode) or x402 USDC (Base Sepolia), and we place the order through the store's own API (WooCommerce Store API). Stores we can't transact against headlessly get an honest `requires_escalation` hand-off with a prefilled-cart `continue_url`.
+4. Agents can also buy. They pay ShoperZero with a Stripe Shared Payment Token (test mode), and we place the order through the store's own API (WooCommerce Store API). Stores we can't transact against headlessly get an honest `requires_escalation` hand-off with a prefilled-cart `continue_url`.
 5. Merchants can claim a store (DNS TXT or meta tag) for a verified badge, or opt out. Positioning: "Cloudflare for agentic commerce: UCP for the other 80% of the web."
 
 ## 2. The 2-minute demo
@@ -33,7 +37,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 | 0:35 | **Make it agent-ready.** One click on the CTA starts indexing with the best method found. The product counter ticks and the grade goes to **A**. Repeat quickly for `www.bulk.com/uk` (Magento) or a JSON-LD store. | `POST /api/v1/stores {store_id}`, crawl in `after()`, Realtime on `crawl_runs` + `stores` |
 | 0:50 | **Outputs.** Open `/s/{slug}/products.json`, `/s/{slug}/llms.txt`, `/.well-known/ucp`. | WS3 index outputs |
 | 1:00 | **Claude buys.** Claude is connected to `https://<app>/api/mcp`. Prompt: "find me a hoodie under $50 across these stores and buy it." Claude calls `search_catalog` → `get_product` → `create_checkout` (live Woo quote) → `complete_checkout` with an SPT. The timeline streams in our UI. | MCP + checkout service + Stripe rail + Realtime on `checkout_events` |
-| 1:30 | **Proof.** The order is in WooCommerce admin with the payment reference in its note. Optional: a second run with x402 shows the tx hash on BaseScan. | Woo connector, x402 rail |
+| 1:30 | **Proof.** The order is in WooCommerce admin with the payment reference in its note. | Woo connector, Stripe test payment |
 | 1:45 | **Honesty + claim.** For the Magento store, checkout returns `requires_escalation` with a prefilled cart link. The merchant claims the store. Close. | `handoff` connector, claim flow |
 
 ---
@@ -91,7 +95,6 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
     │           ├── scans/route.ts, scans/[id]/route.ts   (WS2: POST, GET)
     │           ├── checkouts/route.ts, checkouts/[id]/route.ts,
     │           │   checkouts/[id]/{complete,cancel}/route.ts,
-    │           │   checkouts/[id]/pay/x402/route.ts   (WS4)
     │           ├── orders/[id]/route.ts               (WS4)
     │           ├── claims/**                          (WS5)
     │           └── ui/**                              (WS5: UI-only helpers, not agent-facing)
@@ -119,7 +122,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 | **WS1** Foundation | `supabase/migrations/20260926010000_core.sql` (incl. `scans`, the `stores` scan columns and the `scan-screenshots` bucket), `src/lib/contracts/**` (incl. `scan.ts`), `src/lib/db/**` (typed repo functions, full list in §6.10: `upsertStoreProducts`, `getProduct`, `findProducts`, `searchProducts`, `getStoreBySlug`, `getStoreById`, `rowToStore`, `listStores`, `listStoreProducts`, `getLatestCrawlRun`, `getIndexStats`, `getScan`, `upsertScan`, `getLatestScanForStore`, `logAgentRequest`…), `src/lib/money.ts`, `src/lib/slug.ts`, `src/proxy.ts` (matcher only), `.env.example`, `supabase/seed.sql` |
 | **WS2** Ingestion + scan | `infra/fixtures/js-shop/**`, `src/lib/crawl/**` (`fetch.ts` polite fetch + robots, `detect.ts`, `adapters/{woocommerce,magento,squarespace,sfcc,shopify}.ts`, `sitemap.ts`, `jsonld.ts`, `normalize.ts`, `run.ts`, `mcp-tools.ts`), **`src/lib/scan/**`** (`probes/api.ts`, `probes/dom.ts`, `probes/computer-use.ts`, `score.ts`, `run.ts`; `computer-use.ts` can be handed to a third person), `src/lib/readiness/**`, `src/app/api/v1/stores/route.ts` (**GET and POST**), `src/app/api/v1/crawl-runs/**`, **`src/app/api/v1/scans/**`**, `scripts/crawl-*.ts`, `scripts/scan-*.ts` |
 | **WS3** Agent surface | `src/app/api/mcp/route.ts` (composes the registrars), `src/lib/mcp/**` (`result.ts`, `types.ts`, `instrument.ts`, `instructions.ts`, `tools/catalog.ts`), `src/lib/agent/**`, `src/app/api/v1/{search,products}/**`, `src/app/api/v1/stores/[slug]/route.ts`, `src/app/s/[slug]/**` (route handlers: `products.json`, `products/[handle].json`, `feed.acp.jsonl`, `llms.txt`, `.well-known/ucp`), `src/app/llms.txt/`, `src/app/.well-known/**` (incl. `ucp/[version]`), `src/app/openapi.json/`, `src/app/robots.ts`, `src/lib/formats/{shopify,ucp,acp,llms,permalink,openapi,agent-card,text}.ts` (serializers from `IndexedProduct`) |
-| **WS4** Checkout & payments | `src/lib/checkout/**` (`service.ts`, `state.ts` with `transition()`, `connectors/{index,woo,handoff}.ts` incl. `resolveCheckoutConnector()`, `mcp-tools.ts`), `src/lib/payments/**` (`stripe.ts` using `fetch` + a `Stripe-Version` header for preview endpoints, `x402.ts`), `src/app/api/v1/checkouts/**` (incl. `[id]/pay/x402`), `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`, `infra/woo/` (`docker-compose.woo.yml`, setup script), `scripts/agent-*.ts`, `supabase/migrations/20260926024000_ws4_checkout.sql` |
+| **WS4** Checkout & payments | `src/lib/checkout/**` (`service.ts`, `state.ts` with `transition()`, `connectors/{index,woo,handoff}.ts` incl. `resolveCheckoutConnector()`, `mcp-tools.ts`), `src/lib/payments/**` (`stripe.ts` using `fetch` + a `Stripe-Version` header for preview endpoints), `src/app/api/v1/checkouts/**`, `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`, `infra/woo/` (`docker-compose.woo.yml`, setup script), `scripts/agent-*.ts`, `supabase/migrations/20260926024000_ws4_checkout.sql` |
 | **WS5** Web UI & demo | `src/app/page.tsx` (scan-first landing), `src/app/(site)/**` (incl. `/scan/[id]` live cascade + score report, `/bot`), `src/components/**`, `src/app/layout.tsx`/`globals.css`, `src/app/api/v1/claims/**`, `src/app/api/v1/ui/**` (UI-only helpers, not in `openapi.json`), `docs/demo/**`, `mock/` |
 
 ### 3.3 Clarifications to the map (binding)
@@ -157,7 +160,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
   Announce before `supabase db push`. Never change the schema in Studio.
 - **Only WS1 runs `npm install`**, and it installs the union of all packages in one commit (spec 01 §2). Anyone who needs a new package asks WS1. WS1 installs it and pushes `package.json` + `package-lock.json` together.
 - **The MCP route imports registrars from each stream** (3.3.2). WS2 and WS4 never edit `src/app/api/mcp/route.ts`. WS3 never implements checkout or crawl logic.
-- **`src/proxy.ts`** stays Supabase-session-only (x402 lives in a route handler). Only WS1 changes the matcher.
+- **`src/proxy.ts`** stays Supabase-session-only. Only WS1 changes the matcher.
 - **Commit hygiene:** commit only your own directories. If you must touch a shared file, say so in the commit message.
 
 ---
@@ -170,11 +173,9 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
   - `parsePrice` / `toMinor` / `rescaleMinor` when ingesting;
   - `fromMinor` for Shopify `"25.00"` strings;
   - `acpPrice` for `"25.00 USD"`;
-  - `toX402Price` for `"$42.17"`;
   - `formatMoney` for UI display.
 - Never use floats for arithmetic. Use `addMoney` / `multiplyMoney` / `sumMoney`, which throw on currency mismatch.
 - Search price filters compare raw minor units in each product's own currency. When an agent passes `filters.price`, WS3 also passes `context.currency` (if given) as the `currency` filter.
-- x402 accepts **USD only** (USDC). Checkouts in other currencies do not offer the x402 handler.
 
 ### 4.2 IDs
 | What | Format | Where |
@@ -210,7 +211,6 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
   | `bad_request` | 400 | malformed JSON or query |
   | `validation_error` | 400 | zod failure; `details = z.flattenError(err)` |
   | `unauthorized` | 401 | reserved |
-  | `payment_required` | 402 | emitted only by `withX402` (x402 body, not our envelope) |
   | `forbidden` | 403 | opted-out store; demo wallet disabled |
   | `not_found` | 404 | unknown id / slug |
   | `conflict` | 409 | unique violation race |
@@ -255,7 +255,7 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 - Event names are `area.thing[.verb]`, for example:
   - `crawl.run.started`, `crawl.page.failed`;
   - `checkout.transition`;
-  - `payment.spt.authorized`, `payment.x402.settled`;
+  - `payment.spt.authorized`;
   - `mcp.tool.called`, `http.request`.
 - Always include ids (`store_id`, `crawl_run_id`, `checkout_id`, `request_id`).
 - **Never log:**
@@ -263,7 +263,7 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
   - buyer email, phone or address.
 
   The logger redacts keys that match `/token|secret|password|authorization|cookie|private_?key|signature|email|phone|address|line1|postal|cart_token/i`, but don't rely on it.
-- `checkout_events.message` / `.data` are **public** (timeline). They may carry PI ids, tx hashes, merchant order ids and amounts. They must never carry PII.
+- `checkout_events.message` / `.data` are **public** (timeline). They may carry PI ids, merchant order ids and amounts. They must never carry PII.
 
 ### 4.7 Environment variables
 Read env lazily through `src/lib/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()`, `flags`), never at module top level, so `next build` works without secrets. A missing optional feature variable becomes `AppError("not_implemented")`. It never crashes the app.
@@ -274,7 +274,7 @@ Read env lazily through `src/lib/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | WS5 (browser Realtime / reads), proxy | `sb_publishable_…` |
 | `SUPABASE_SECRET_KEY` | server | WS1 `db()` (so WS2, WS3, WS4, WS5 server code) | `sb_secret_…` |
 | `SUPABASE_DB_PASSWORD` | CLI only | WS1 (`supabase link` / `db push`) | not read by the app |
-| `APP_URL` | server | WS1 (`Store.urls`), WS2 (UA), WS3 (discovery URLs), WS4 (`pay_url`, links) | `http://localhost:3000`; prod `https://<app>.vercel.app` |
+| `APP_URL` | server | WS1 (`Store.urls`), WS2 (UA), WS3 (discovery URLs), WS4 (checkout and timeline links) | `http://localhost:3000`; prod `https://<app>.vercel.app` |
 | `CRAWLER_USER_AGENT` | server | WS2 | `ShoperZeroBot/0.1 (+https://<app>/bot)` |
 | `CRAWL_MAX_PRODUCTS` | server | WS2 | `150` |
 | `CRAWL_TIME_BUDGET_MS` | server | WS2 | `240000` |
@@ -293,13 +293,7 @@ Read env lazily through `src/lib/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()
 | `STRIPE_SECRET_KEY` | server | WS4 | `sk_test_…` (WS4 refuses non-`sk_test_` keys) |
 | `STRIPE_PREVIEW_VERSION` | server | WS4 | `2026-04-22.preview` |
 | `STRIPE_SPT_MODE` | server | WS4 | `spt` (`fallback` = `pm_card_visa`) |
-| `X402_NETWORK` | server | WS4 | `eip155:84532` |
-| `X402_FACILITATOR_URL` | server | WS4 | `https://x402.org/facilitator` |
-| `X402_PAY_TO` | server | WS4 | `0x…` (our receiving address) |
-| `X402_FLOW` | server | WS4 | `upfront` (`authorization` fallback) |
-| `DEMO_WALLET_PRIVATE_KEY` | server | WS4 | `0x…` Base Sepolia **test** key only |
 | `DEMO_WALLET_ENABLED` | server | WS4 | `true` in the demo deployment only |
-| `DEMO_WALLET_MAX_USD` | server | WS4 | `$25` |
 | `DEMO_WALLET_TOKEN` | server | WS4 | shared secret for the demo wallet MCP, optional |
 | `CHECKOUT_ALLOWED_DOMAINS` | server | WS4 | comma-separated allowlist for `woo_store_api` (empty = only `WOO_DEMO_URL`'s host) |
 | `CHECKOUT_BROWSER_ENABLED` | server | WS4, stretch (browser connector) | `false` |
@@ -371,7 +365,7 @@ supabase.channel(`crawl:${id}`)
 - **Route handler params are async.** Use `RouteContext<'/api/v1/products/[id]'>` (a global type generated by `next dev` / `next build` / `next typegen`) and `const { id } = await ctx.params`.
 - `GET` route handlers are **not cached** by default. Leave them dynamic.
 - Route segment config:
-  - `export const maxDuration = 300` on the crawl-start route (`POST /api/v1/stores`), the scan-start route (`POST /api/v1/scans`), the MCP route (B8: `index_store` and `scan_store` schedule work with `after()`) and the x402 pay route `POST /api/v1/checkouts/{id}/pay/x402` (B6) (`after()` runs within the route's `maxDuration`);
+  - `export const maxDuration = 300` on the crawl-start route (`POST /api/v1/stores`), the scan-start route (`POST /api/v1/scans`), the MCP route (B8: `index_store` and `scan_store` schedule work with `after()`) (`after()` runs within the route's `maxDuration`);
   - `export const runtime = "nodejs"` is the default. **Never use `edge`**, which is deprecated.
 - `after()` from `next/server` works in route handlers, including inside functions they call, such as `startStoreCrawl()`. It runs even when the response errored.
 - `proxy.ts` replaces `middleware.ts`. Its matcher must be a static constant.
@@ -386,7 +380,7 @@ supabase.channel(`crawl:${id}`)
 
 | File | Contents |
 |---|---|
-| `primitives.ts` | `Money`, `MoneySchema`, `CurrencySchema`, `IsoDateTime`, enum value arrays + union types (`Availability`, `Platform`, `ExtractionSource`, `CheckoutConnectorId`, `PaymentRailId`, `AgentSurface`), protocol constants (`UCP_VERSION`, `UCP_SUPPORTED_VERSIONS`, `ACP_VERSION`, `PAYMENT_HANDLER_IDS`, `X402_NETWORKS`), limits |
+| `primitives.ts` | `Money`, `MoneySchema`, `CurrencySchema`, `IsoDateTime`, enum value arrays + union types (`Availability`, `Platform`, `ExtractionSource`, `CheckoutConnectorId`, `PaymentRailId`, `AgentSurface`), protocol constants (`UCP_VERSION`, `UCP_SUPPORTED_VERSIONS`, `ACP_VERSION`, `PAYMENT_HANDLER_IDS`), limits |
 | `api.ts` | `API_ERROR_STATUS`, `ApiErrorCode`, `ApiErrorBody` |
 | `catalog.ts` | `OfferSchema`/`Offer`, `NormalizedVariantSchema`/`NormalizedVariant`, `NormalizedProductSchema`/`NormalizedProduct`, `StoreRef`, `IndexedVariant`, `IndexedProduct`, `ProductSummary`, `SearchParams`, `SearchResult` |
 | `store.ts` | `StoreStatus`, readiness (`ReadinessCheckId`, `READINESS_WEIGHTS`, `gradeFor`, `ReadinessCheck`, `ReadinessReport`), `StoreStrategy`, `StoreUrls`, `Store`, `StoreSummary`, `CrawlRun`, `CrawlStep`, `CrawlLogEntry`, `StoreClaim`, `ClaimMethod`, `PublicMetrics` |
@@ -448,7 +442,7 @@ export type ExtractionSource = (typeof EXTRACTION_SOURCES)[number];
 export const CHECKOUT_CONNECTOR_IDS = ["woo_store_api", "magento_guest", "handoff", "browser"] as const;
 export type CheckoutConnectorId = (typeof CHECKOUT_CONNECTOR_IDS)[number];
 
-export const PAYMENT_RAIL_IDS = ["stripe_spt", "x402"] as const;
+export const PAYMENT_RAIL_IDS = ["stripe_spt"] as const;
 export type PaymentRailId = (typeof PAYMENT_RAIL_IDS)[number];
 
 export const AGENT_SURFACES = ["mcp", "rest", "products_json", "feed", "llms_txt", "ucp", "openapi", "agent_card"] as const;
@@ -460,11 +454,8 @@ export const UCP_SUPPORTED_VERSIONS = ["2026-08-25", "2026-04-08"] as const;
 export const ACP_VERSION = "2026-04-17" as const;
 export const PAYMENT_HANDLER_IDS = {
   stripe_spt: "app.shoperzero.stripe_spt",
-  x402: "app.shoperzero.x402",
 } as const;
 export type PaymentHandlerId = (typeof PAYMENT_HANDLER_IDS)[PaymentRailId];
-export const X402_NETWORKS = { base_sepolia: "eip155:84532", base: "eip155:8453" } as const;
-export type X402Network = (typeof X402_NETWORKS)[keyof typeof X402_NETWORKS];
 
 // ---------- limits ----------
 export const QUOTE_TTL_SECONDS = 600;          // checkout quote validity (10 min)
@@ -484,7 +475,6 @@ export const API_ERROR_STATUS = {
   bad_request: 400,          // malformed JSON, bad query string
   validation_error: 400,     // zod failure; details = z.flattenError(err)
   unauthorized: 401,
-  payment_required: 402,     // only emitted by withX402 itself (x402 body), never by our code
   forbidden: 403,            // opted-out store, demo wallet disabled
   not_found: 404,
   conflict: 409,             // unique violation (e.g. duplicate store slug race)
@@ -770,7 +760,7 @@ export interface PublicMetrics {
   gmv_minor: Record<string, number>; // currency -> minor units
   // round 2, optional (WS5): the UI must tolerate their absence
   stores_by_best_method?: Partial<Record<AccessMethod | "none", number>>; // non-opted-out stores with a best_method
-  orders_by_rail?: Partial<Record<"stripe_spt" | "x402", number>>;        // placed + confirmed orders
+  orders_by_rail?: Partial<Record<"stripe_spt", number>>;        // placed + confirmed orders
   median_seconds_to_agent_ready?: number | null; // median (finished_at - created_at) of succeeded crawl runs
 }
 ```
@@ -894,7 +884,7 @@ import { z } from "zod";
 import type { IndexedVariant } from "./catalog";
 import {
   PAYMENT_HANDLER_IDS, UCP_VERSION,
-  type CheckoutConnectorId, type IsoDateTime, type Money, type PaymentRailId, type X402Network,
+  type CheckoutConnectorId, type IsoDateTime, type Money, type PaymentRailId,
 } from "./primitives";
 import type { Store } from "./store";
 
@@ -984,13 +974,12 @@ export type UpdateCheckoutInput = z.infer<typeof UpdateCheckoutInputSchema>;
 
 export const PaymentCredentialSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("spt"), token: z.string().min(1).max(255) }),            // "spt_..." (fallback: "pm_card_visa")
-  z.object({ type: z.literal("x402_receipt"), tx_hash: z.string().regex(/^0x[0-9a-fA-F]{64}$/) }),
 ]);
 export type PaymentCredential = z.infer<typeof PaymentCredentialSchema>;
 
 export const PaymentInstrumentSchema = z.object({
-  handler_id: z.enum([PAYMENT_HANDLER_IDS.stripe_spt, PAYMENT_HANDLER_IDS.x402]),
-  type: z.enum(["card", "x402"]),
+  handler_id: z.literal(PAYMENT_HANDLER_IDS.stripe_spt),
+  type: z.literal("card"),
   credential: PaymentCredentialSchema,
 });
 export type PaymentInstrument = z.infer<typeof PaymentInstrumentSchema>;
@@ -1025,18 +1014,11 @@ export const TOTAL_TYPES = ["subtotal", "shipping", "tax", "discount", "total"] 
 export type TotalType = (typeof TOTAL_TYPES)[number];
 export interface Total { type: TotalType; amount: number; display_text?: string } // minor units in CheckoutSession.currency
 
-export type PaymentHandler =
-  | {
-      id: typeof PAYMENT_HANDLER_IDS.stripe_spt;
-      rail: "stripe_spt";
-      config: { accepted: "card"[]; test_mode: boolean; profile?: string };
-    }
-  | {
-      id: typeof PAYMENT_HANDLER_IDS.x402;
-      rail: "x402";
-      // pay_url = {APP_URL}/api/v1/checkouts/{id}/pay/x402 (B6)
-      config: { pay_url: string; network: X402Network; asset: "USDC"; amount: string /* "$42.17" */ };
-    };
+export type PaymentHandler = {
+  id: typeof PAYMENT_HANDLER_IDS.stripe_spt;
+  rail: "stripe_spt";
+  config: { accepted: "card"[]; test_mode: boolean; profile?: string };
+};
 
 export const MESSAGE_CODES = [
   "out_of_stock", "price_changed", "quote_expired", "missing_buyer", "missing_address",
@@ -1102,8 +1084,6 @@ export interface CheckoutEvent {
 export type CheckoutEventData = {
   rail?: PaymentRailId;
   payment_intent_id?: string;
-  tx_hash?: string;
-  network?: X402Network;
   merchant_order_id?: string;
   merchant_order_url?: string;
   continue_url?: string;
@@ -1114,20 +1094,18 @@ export type CheckoutEventData = {
 
 // ---------- persistence (internal; never serialize to agents) ----------
 export type CheckoutPaymentStatus =
-  | "none" | "authorized" | "settled" | "captured" | "voided" | "refunded" | "failed";
+  | "none" | "authorized" | "captured" | "voided" | "refunded" | "failed";
 export interface CheckoutPaymentRecord {   // checkouts.payment jsonb
   rail?: PaymentRailId;
   status?: CheckoutPaymentStatus;
-  reference?: string;         // pi_... | 0x tx hash
+  reference?: string;         // Stripe PaymentIntent id (pi_...)
   amount?: Money;
   payer?: string;
   captured?: boolean;
   // WS4 internal fields in the same jsonb (CCR-W4-R2-3)
   lock?: { rail: PaymentRailId; until: IsoDateTime }; // payment lock; updates are rejected (409) while held
   mode?: "spt" | "fallback";                           // STRIPE_SPT_MODE at payment time
-  network?: string;                                    // x402 CAIP-2 network
   idempotency_key?: string;
-  simulated_refund?: boolean;                          // x402 mock refund
 }
 export interface CheckoutRecord {          // typed checkouts row (db/checkouts.ts)
   id: string;
@@ -1190,17 +1168,16 @@ export interface CheckoutConnector {
 
 export interface PaymentReceipt {
   rail: PaymentRailId;
-  reference: string;          // pi_... | 0x tx hash
+  reference: string;          // Stripe PaymentIntent id (pi_...)
   amount: Money;
-  payer?: string;             // wallet address (x402)
-  captured: boolean;          // x402: true (settled upfront); SPT: false until capture()
+  captured: boolean;          // false until capture() succeeds
 }
 export interface PaymentRail {
   id: PaymentRailId;
-  /** SPT: PaymentIntent with capture_method=manual. x402: verify the already-settled payment for this checkout. */
+  /** Stripe PaymentIntent with capture_method=manual. */
   authorize(checkout: CheckoutSession, instrument: PaymentInstrument): Promise<PaymentReceipt>;
   capture(receipt: PaymentReceipt): Promise<PaymentReceipt>;
-  /** SPT: cancel the PI (void). x402: log + checkout_event only (mock refund). */
+  /** Cancel the uncaptured PaymentIntent, or refund a captured payment. */
   voidOrRefund(receipt: PaymentReceipt): Promise<void>;
 }
 ```
@@ -1279,7 +1256,7 @@ import {
   CompleteCheckoutInputSchema, CreateCheckoutInputSchema, UpdateCheckoutInputSchema,
   type CheckoutSession,
 } from "./checkout";
-import { PLATFORMS, type X402Network } from "./primitives";
+import { PLATFORMS } from "./primitives";
 import type { ScanReport, ScanStartResult } from "./scan";
 import type { CrawlRun, CrawlRunStatus, Store, StoreSummary } from "./store";
 
@@ -1426,18 +1403,6 @@ export const WalletIssueSptInputSchema = z.object({
 });
 export interface WalletIssueSptOutput { token: string; expires_at: string | null; test_mode: true }
 
-export const WalletPayX402InputSchema = z.object({
-  pay_url: z.url().describe("PaymentHandler.config.pay_url from the checkout"),
-});
-export interface WalletPayX402Output {
-  tx_hash: string;
-  payer: string;
-  network: X402Network;
-  amount: string;             // "$42.17"
-  explorer_url: string;       // https://sepolia.basescan.org/tx/{tx_hash}
-  checkout?: CheckoutSession; // when the pay route returns it
-}
-
 // ---------- registry ----------
 export const MCP_TOOL_INPUTS = {
   list_stores: ListStoresInputSchema,
@@ -1459,7 +1424,6 @@ export type McpToolName = keyof typeof MCP_TOOL_INPUTS;
 
 export const DEMO_WALLET_TOOL_INPUTS = {
   wallet_issue_spt: WalletIssueSptInputSchema,
-  wallet_pay_x402: WalletPayX402InputSchema,
 } as const;
 
 /** Shape every tool handler returns (assignable to the SDK's CallToolResult). */
@@ -1490,9 +1454,8 @@ MCP tool table (`/api/mcp`, `maxDuration = 300`). The route composes three regis
 | `cancel_checkout` | `CancelCheckoutToolInputSchema` | `CheckoutSession` | `registerCheckoutTools` (WS4) | `POST /api/v1/checkouts/{id}/cancel` |
 | `get_order` | `GetOrderToolInputSchema` | `Order` | `registerCheckoutTools` (WS4) | `GET /api/v1/orders/{id}` |
 | `wallet_issue_spt` (demo wallet MCP) | `WalletIssueSptInputSchema` | `WalletIssueSptOutput` | demo wallet (WS4) | none |
-| `wallet_pay_x402` (demo wallet MCP) | `WalletPayX402InputSchema` | `WalletPayX402Output` | demo wallet (WS4) | none |
 
-REST bodies for checkout: the body of `POST /api/v1/checkouts` is `CreateCheckoutInput`, of `PUT` is `UpdateCheckoutInput`, and of `.../complete` is `CompleteCheckoutInput`. The idempotency key comes from the `Idempotency-Key` header. The x402 rail is paid at **`POST /api/v1/checkouts/{id}/pay/x402`** (B6, WS4, `withX402`, `maxDuration = 300`); agents get the full URL from `PaymentHandler.config.pay_url`. The body of `POST /api/v1/scans` is `CreateScanInput`; the body of `POST /api/v1/stores` is `{ url } | { store_id }` plus `force?`.
+REST bodies for checkout: the body of `POST /api/v1/checkouts` is `CreateCheckoutInput`, of `PUT` is `UpdateCheckoutInput`, and of `.../complete` is `CompleteCheckoutInput`. The idempotency key comes from the `Idempotency-Key` header. The body of `POST /api/v1/scans` is `CreateScanInput`; the body of `POST /api/v1/stores` is `{ url } | { store_id }` plus `force?`.
 
 `search_catalog` → `SearchParams` mapping (WS3):
 - `query` → `query`
@@ -1798,7 +1761,7 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
 | When | Milestone | Owner(s) | Exit check |
 |---|---|---|---|
 | T+15 | Packages installed and pushed (one commit) | WS1 | `npm ci && npm run build` green on a fresh clone |
-| T+15 | Payment spikes: SPT test helper returns a token; `curl https://x402.org/facilitator/supported` lists `eip155:84532`; demo wallet funded (faucet.circle.com) | WS4 | go / fallback decision recorded in the channel |
+| T+15 | Stripe feasibility check: SPT test helper returns a token, or labelled test fallback is selected | WS4 | go / fallback decision recorded in the channel |
 | **T+30 SYNC** | **Contracts + stubs + core migration file + seed pushed. CONTRACTS FROZEN.** | WS1 | `npm run build` green; every stream imports `@/lib/contracts` |
 | T+45 | Migration applied (local and remote), `types.gen.ts` generated, read helpers (`getProduct`, `searchProducts`, `getStoreBySlug`, `listStores`) implemented against seed | WS1 | `npm run db:smoke` passes (spec 01 §11) |
 | T+60 | MCP route alive: `tools/list` shows the catalog tools; `search_catalog("hoodie")` returns the seed hoodie in Claude / MCP Inspector | WS3 | screenshot in the channel |
@@ -1807,7 +1770,7 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
 | T+90 | `POST /api/v1/stores {url: WOO_DEMO_URL}` crawls the Woo demo store into the DB with live progress | WS2 (+WS5 UI) | products visible in `/s/{slug}/products.json` |
 | T+90 | `POST /api/v1/scans` runs the `api` probe on the Woo demo store and the `dom` probe on a JSON-LD store; `/scan/{id}` renders the cards live from Realtime on `scans` | WS2 (+WS5 UI) | `GET /api/v1/scans/{id}` → `status: "done"`, `best_method` set |
 | **T+2h SYNC** | **End to end: Claude → `search_catalog` → `get_product` → `create_checkout` (live Woo quote) → `complete_checkout` (SPT) → Woo order placed; timeline streams** | all | order id visible in Woo admin + `/checkouts/{id}` |
-| T+3h | JSON-LD engine on 2 external demo stores; x402 pay path; discovery files (`llms.txt`, `.well-known/ucp`); scan score → "Make it agent-ready" → A | WS2, WS4, WS3, WS5 | |
+| T+3h | JSON-LD engine on 2 external demo stores; Stripe checkout; discovery files (`llms.txt`, `.well-known/ucp`); scan score → "Make it agent-ready" → A | WS2, WS4, WS3, WS5 | |
 | T+3h | `computer_use` probe streams screenshots to `scan-screenshots` and stops before payment (can be owned by a third person) | WS2 | screenshots render on `/scan/{id}` |
 | T+4h SYNC | Feature-complete for the demo script; everything after this is polish or cut-list items | all | run the demo script once end to end |
 | E−60 | **Code freeze.** Deploy prod to Vercel with all env vars. Delete seed data from the remote DB (`delete from public.stores where metadata->>'seed' = 'true';`; scans cascade). Pre-scan and pre-crawl the demo stores. | WS1 + WS5 | prod smoke passes |
@@ -1832,7 +1795,6 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
    - `Message` adds `path` and `severity`.
    - `CheckoutSession.store` adds `name`, and `CheckoutSession.links[]` always includes the timeline URL.
    - `CompleteCheckoutInput.payment.instruments` is an array of length 1, not a TS tuple.
-   - The x402 `tx_hash` is regex-validated.
 7. **Connectors.** `CheckoutConnector.quote()` takes `QuoteInput` (db-resolved `ResolvedLine[]` + buyer / address / shipping choice) instead of the raw `CreateCheckoutInput`. `continueUrl(store, lines)` likewise.
 8. **Services.**
    - `computeReadiness(store, phase)` replaces `computeReadiness(domain)`.
@@ -1850,7 +1812,7 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
     - The legacy `products (store_id, url)` unique is dropped; identity is `(store_id, handle)`.
     - Enumerations are enforced with named CHECK constraints, not Postgres enums.
     - Adds `checkouts.messages`, `orders.updated_at`, `crawl_runs.updated_at` and explicit grants.
-11. **Round 2 (DECISIONS.md).** Scan and score is new (not in the synthesis): `scan.ts`, `scans`, the `stores` scan columns, the `scan-screenshots` bucket, `/api/v1/scans`, `scan_store` / `get_scan`. Catalog outputs switch to the UCP product shape (B7). `CrawlLogEntry` gains `step?` and is capped at 50. `CheckoutEventData` is typed. `ALLOWED_TRANSITIONS` adds `order_placed → failed`. `upsert_product_batch` no longer deletes variants. `agent_requests.agent_profile` is added. The x402 route moves to `/pay/x402`. See "Round-2 changes" at the top.
+11. **Round 2 (DECISIONS.md).** Scan and score is new (not in the synthesis): `scan.ts`, `scans`, the `stores` scan columns, the `scan-screenshots` bucket, `/api/v1/scans`, `scan_store` / `get_scan`. Catalog outputs switch to the UCP product shape (B7). `CrawlLogEntry` gains `step?` and is capped at 50. `CheckoutEventData` is typed. `ALLOWED_TRANSITIONS` adds `order_placed → failed`. `upsert_product_batch` no longer deletes variants. `agent_requests.agent_profile` is added. See "Round-2 changes" at the top.
 
 ## 9. Definition of done (demo)
 
@@ -1861,9 +1823,8 @@ The demo is done when all of these pass **on the production Vercel URL** with th
 - [ ] Pasting a demo URL on `/` opens `/scan/{id}`, which shows the access cascade live (one card per method, screenshots for `computer_use`), then the score report with seconds and USD per agent task. A blocked store shows `blocked`, never a crash.
 - [ ] "Make it agent-ready" on that report starts indexing: detected platform, a live product counter (Realtime, no refresh), and the grade reaches A within 60 s, ending on the store page.
 - [ ] Claude (Desktop or Code), with only `https://<app>/api/mcp` (+ the demo wallet MCP) configured, completes "find me a hoodie under $50 across these stores and buy it" with no human edits. It ends at `status: "completed"` with `order.merchant_order_id`.
-- [ ] That order exists in WooCommerce admin with the payment reference (PI id or tx hash) in its order note. The Stripe test dashboard shows the captured PaymentIntent.
+- [ ] That order exists in WooCommerce admin with the payment reference (Stripe PaymentIntent id) in its order note. The Stripe test dashboard shows the captured PaymentIntent.
 - [ ] `/checkouts/{id}` shows every transition (`quoting → awaiting_payment → payment_authorized → placing_order → order_placed → completed`) as it happens.
 - [ ] `create_checkout` on the Magento store returns `status: "requires_escalation"` with a working `continue_url`.
 - [ ] Claim flow (or its slide) works for one store. The metrics strip shows non-zero `agent_requests`.
-- [ ] Optional second act: an x402 payment on Base Sepolia completes a second order, and the BaseScan link opens.
 - [ ] A backup video of the full run is recorded and saved in `docs/demo/`. Seed data is removed from prod.

@@ -2,8 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
-  // Mock mode (WS5) and envs without Supabase must still render UI pages.
+  const path = request.nextUrl.pathname;
+  const mockCheckoutPage = path === "/demo/checkout" || path.startsWith("/checkouts/");
+  // Mock mode (WS5), checkout demo pages, and envs without Supabase must still render.
+  // API routes are already excluded by the matcher below.
   if (
+    mockCheckoutPage ||
     process.env.NEXT_PUBLIC_UI_MOCK === "1" ||
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY

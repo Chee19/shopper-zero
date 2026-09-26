@@ -69,8 +69,6 @@ Versions checked with `npm view <pkg> version` on 2026-09-26:
 | `mcp-handler` | 2.2.0 | WS3, WS4 | peers: `next >=13`, `@modelcontextprotocol/server ^2.0.0` |
 | `@modelcontextprotocol/server` | 2.1.0 | WS3, WS4 | fallback: `mcp-handler@1` + `@modelcontextprotocol/sdk@1.30.1` |
 | `stripe` | 22.6.2 | WS4 | preview endpoints via `fetch` + `Stripe-Version` |
-| `@x402/core`, `@x402/next`, `@x402/evm`, `@x402/fetch` | 2.27.0 | WS4 | `@x402/next` peer `next >=16.2.6` ✓; `@x402/paywall` is an **optional** peer (not installed). `@x402/core` pulls its own `zod@^3` (nested, harmless). |
-| `viem` | 2.56.9 | WS4 | `@x402/evm` needs `^2.48.11` |
 | `tsx` (dev) | 4.23.15 | WS1 tests, WS2/WS4 scripts | runs `.ts` scripts and `tsx --test` |
 | `@anthropic-ai/sdk` | 0.128.0 | WS2 scan (DOM recipe agent, computer-use probe) | **core since round 2** (was stretch). Peer `zod ^3.25 \|\| ^4` ✓ |
 | `playwright-core` | 1.63.0 | WS2 scan (`dom`, `computer_use`: drive a local browser or `connectOverCDP` to Browserbase) | **core**. No bundled browsers; node ≥ 20 |
@@ -84,7 +82,6 @@ Exact command (pin exact versions so the lockfile can't drift mid-hackathon):
 ```bash
 npm i --save-exact zod@4.6.5 cheerio@1.2.0 fast-xml-parser@5.11.1 robots-parser@3.0.1 p-queue@9.3.3 \
   mcp-handler@2.2.0 @modelcontextprotocol/server@2.1.0 stripe@22.6.2 \
-  @x402/core@2.27.0 @x402/next@2.27.0 @x402/evm@2.27.0 @x402/fetch@2.27.0 viem@2.56.9 \
   @anthropic-ai/sdk@0.128.0 playwright-core@1.63.0 @browserbasehq/sdk@2.21.0
 npm i -D --save-exact tsx@4.23.15 playwright@1.63.0
 # stretch, install only when asked: @mendable/firecrawl-js@4.41.0 @browserbasehq/stagehand@4.1.0 (Node >= 22.18)
@@ -457,7 +454,7 @@ create table public.checkouts (
   fulfillment jsonb,                                     -- CheckoutSession["fulfillment"]
   totals jsonb not null default '[]'::jsonb,             -- Total[]
   currency text,
-  total_minor bigint,                                    -- frozen once state = awaiting_payment (x402 price source)
+  total_minor bigint,                                    -- frozen once state = awaiting_payment
   connector_state jsonb not null default '{}'::jsonb,    -- e.g. {cart_token, woo_order_id}; NEVER exposed
   payment jsonb not null default '{}'::jsonb,            -- CheckoutPaymentRecord
   continue_url text,
@@ -482,7 +479,7 @@ create table public.checkout_events (
   from_state text,
   to_state text not null,
   message text,                                          -- human-readable, NO PII (public timeline)
-  data jsonb not null default '{}'::jsonb,               -- {payment_intent, tx_hash, merchant_order_id, ...}; NO PII
+  data jsonb not null default '{}'::jsonb,               -- {payment_intent_id, merchant_order_id, ...}; NO PII
   created_at timestamptz not null default now()
 );
 create index checkout_events_checkout_idx on public.checkout_events (checkout_id, id);
@@ -494,16 +491,16 @@ create table public.orders (
   merchant_order_id text,
   merchant_order_url text,
   status text not null,                                  -- placed | confirmed | failed | refunded
-  rail text not null,                                    -- stripe_spt | x402
-  payment_reference text,                                -- pi_... | 0x tx hash
-  payer text,                                            -- wallet address (x402)
+  rail text not null,                                    -- stripe_spt
+  payment_reference text,                                -- Stripe PaymentIntent id (pi_...)
+  payer text,                                            -- reserved, null for Stripe
   amount_minor bigint not null,
   currency text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint orders_checkout_id_key unique (checkout_id), -- one order per checkout = idempotency
   constraint orders_status_check check (status in ('placed', 'confirmed', 'failed', 'refunded')),
-  constraint orders_rail_check check (rail in ('stripe_spt', 'x402'))
+  constraint orders_rail_check check (rail = 'stripe_spt')
 );
 create index orders_store_idx on public.orders (store_id, created_at desc);
 
@@ -1737,7 +1734,7 @@ Behavior summary:
 | `rescaleMinor(amount, fromExp, c)` | Woo `prices.price` with `currency_minor_unit` → our exponent (`"115"`, 0, USD → 11500) |
 | `fromMinor(amount, c)` | `"25.00"` (Shopify strings, exact exponent digits, no grouping) |
 | `formatMoney(m, locale)` | UI display `"$45.00"` |
-| `acpPrice(m)` / `toX402Price(m)` | `"25.00 USD"` / `"$42.17"` (x402: USD only, throws otherwise) |
+| `acpPrice(m)` | `"25.00 USD"` |
 | `addMoney`, `multiplyMoney`, `sumMoney` | Throw on currency mismatch or a non-integer qty |
 | `slugify(s, max=80)` | NFKD, strip diacritics, lower-case, `[^a-z0-9]+` → `-`, trim dashes |
 | `shortHash(s)` | FNV-1a 32-bit, 8 hex (deterministic, not security) |
@@ -1861,11 +1858,6 @@ export function acpPrice(m: Money): string {
   return `${fromMinor(m.amount, m.currency)} ${m.currency}`;
 }
 
-/** x402 price string for USDC: {4217,"USD"} -> "$42.17". Throws for non-USD (no FX in the MVP). */
-export function toX402Price(m: Money): string {
-  if (m.currency !== "USD") throw new Error(`x402 needs USD, got ${m.currency}`);
-  return `$${fromMinor(m.amount, "USD")}`;
-}
 
 export function addMoney(a: Money, b: Money): Money {
   if (a.currency !== b.currency) throw new Error(`currency mismatch ${a.currency}/${b.currency}`);
@@ -1997,7 +1989,7 @@ Tests: save as `src/lib/foundation.test.ts` (money, slug and contract checks, in
 ```ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { acpPrice, currencyExponent, formatMoney, fromMinor, parsePrice, rescaleMinor, toMinor, toX402Price } from "./money";
+import { acpPrice, currencyExponent, formatMoney, fromMinor, parsePrice, rescaleMinor, toMinor } from "./money";
 import { handleFromUrl, normalizeStoreUrl, slugify, storeSlugFromDomain } from "./slug";
 import {
   CompleteCheckoutInputSchema, CreateCheckoutInputSchema, NormalizedProductSchema,
@@ -2034,8 +2026,6 @@ test("money", () => {
   assert.equal(fromMinor(-150, "USD"), "-1.50");
   assert.equal(formatMoney({ amount: 4500, currency: "USD" }), "$45.00");
   assert.equal(acpPrice({ amount: 2500, currency: "USD" }), "25.00 USD");
-  assert.equal(toX402Price({ amount: 4217, currency: "USD" }), "$42.17");
-  assert.throws(() => toX402Price({ amount: 1, currency: "EUR" }));
 });
 
 test("slug", () => {
@@ -2074,7 +2064,7 @@ test("contracts", () => {
     payment: { instruments: [{ handler_id: "app.shoperzero.stripe_spt", type: "card", credential: { type: "spt", token: "spt_123" } }] },
   }).success);
   assert.equal(CompleteCheckoutInputSchema.safeParse({
-    payment: { instruments: [{ handler_id: "app.shoperzero.x402", type: "x402", credential: { type: "x402_receipt", tx_hash: "0x12" } }] },
+    payment: { instruments: [{ handler_id: "app.shoperzero.stripe_spt", type: "card", credential: { type: "spt", token: "" } }] },
   }).success, false);
   assert.ok(SearchCatalogInputSchema.safeParse({ catalog: { query: "hoodie", filters: { price: { max: 5000 } } }, meta: { "ucp-agent": { profile: "https://a/p.json" }, extra: 1 } }).success);
   assert.ok(SearchCatalogInputSchema.safeParse({ catalog: {} }).success);
@@ -2167,16 +2157,7 @@ STRIPE_PREVIEW_VERSION=2026-04-22.preview
 # spt | fallback (pm_card_visa)
 STRIPE_SPT_MODE=spt
 
-# x402 on Base Sepolia (WS4)
-X402_NETWORK=eip155:84532
-X402_FACILITATOR_URL=https://x402.org/facilitator
-X402_PAY_TO=
-# upfront | authorization
-X402_FLOW=upfront
-# Demo buyer wallet: Base Sepolia TEST key only. Never a mainnet key.
-DEMO_WALLET_PRIVATE_KEY=
 DEMO_WALLET_ENABLED=false
-DEMO_WALLET_MAX_USD=$25
 DEMO_WALLET_TOKEN=
 
 # Checkout safety (WS4)
@@ -2264,8 +2245,8 @@ export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "content-type, authorization, idempotency-key, ucp-agent, request-id, payment-signature, x-payment, mcp-session-id, mcp-protocol-version, last-event-id",
-  "Access-Control-Expose-Headers": "request-id, payment-required, payment-response, x-payment-response, mcp-session-id",
+    "content-type, authorization, idempotency-key, ucp-agent, request-id, mcp-session-id, mcp-protocol-version, last-event-id",
+  "Access-Control-Expose-Headers": "request-id, mcp-session-id",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -2406,12 +2387,12 @@ export type EnvName =
   | "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" | "SUPABASE_SECRET_KEY"
   | "APP_URL" | "CRAWLER_USER_AGENT" | "CRAWL_MAX_PRODUCTS" | "ALLOW_PRIVATE_STORE_HOSTS" | "LOG_LEVEL"
   | "STRIPE_SECRET_KEY" | "STRIPE_PREVIEW_VERSION"
-  | "X402_NETWORK" | "X402_FACILITATOR_URL" | "X402_PAY_TO" | "DEMO_WALLET_PRIVATE_KEY" | "DEMO_WALLET_ENABLED"
+  | "DEMO_WALLET_ENABLED"
   | "WOO_DEMO_URL" | "WOO_CONSUMER_KEY" | "WOO_CONSUMER_SECRET"
   | "CRAWL_TIME_BUDGET_MS" | "CRAWL_MAX_CONCURRENT_RUNS" | "CRAWL_TIERS"
   | "ANTHROPIC_API_KEY" | "SCAN_MODEL" | "SCAN_MAX_CONCURRENT" | "SCAN_CU_ENABLED" | "SCAN_CU_MAX_STEPS"
   | "BROWSERBASE_API_KEY" | "BROWSERBASE_PROJECT_ID" | "JS_SHOP_FIXTURE_URL"
-  | "STRIPE_SPT_MODE" | "X402_FLOW" | "DEMO_WALLET_MAX_USD" | "DEMO_WALLET_TOKEN"
+  | "STRIPE_SPT_MODE" | "DEMO_WALLET_TOKEN"
   | "CHECKOUT_ALLOWED_DOMAINS" | "CHECKOUT_BROWSER_ENABLED" | "CHECKOUT_BROWSER_HOSTS" | "CHECKOUT_FORCE_HANDOFF"
   | "NEXT_PUBLIC_UI_MOCK"
   | "OPENAI_API_KEY" | "FIRECRAWL_API_KEY" | "CRON_SECRET";
