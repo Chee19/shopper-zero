@@ -98,4 +98,12 @@ export const CONNECTOR_LABELS: Record<string, string> = {
   magento_guest: "Magento guest cart",
   handoff: "Handoff",
   browser: "Browser",
+  provence_demo: "Lumière de Provence (demo store)",
 };
+
+/** How a merchant order is named in links: "WooCommerce order #1042", "Lumière order #…". */
+export function merchantOrderLabel(connector: string | null | undefined): string {
+  if (connector === "woo_store_api") return "WooCommerce order";
+  if (connector === "provence_demo") return "Lumière order";
+  return "Merchant order";
+}

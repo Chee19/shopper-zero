@@ -1,5 +1,6 @@
 import type { CheckoutEventData, PaymentRailId } from "../lib/contracts";
 import { formatMoney, stripeUrl, truncateMiddle } from "../lib/format";
+import { merchantOrderLabel } from "../lib/methods";
 import { Chip } from "../ui/Chip";
 import { CopyButton } from "../ui/CopyButton";
 import { External } from "../ui/icons";
@@ -9,7 +10,7 @@ export const RAIL_LABEL: Record<PaymentRailId, string> = { stripe_spt: "Stripe S
 const link = "inline-flex items-center gap-1 text-accent-text hover:underline";
 
 /** Renders the CCR-5 event data keys (spec 04 §6.4) as chips and links. Stripe only (MVP scope). */
-export function PaymentLinks({ data }: { data: CheckoutEventData }) {
+export function PaymentLinks({ data, connector }: { data: CheckoutEventData; connector?: string | null }) {
   if (!data || Object.keys(data).length === 0) return null;
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
@@ -25,10 +26,10 @@ export function PaymentLinks({ data }: { data: CheckoutEventData }) {
       ) : null}
       {data.merchant_order_url ? (
         <a href={data.merchant_order_url} target="_blank" rel="noreferrer" className={link}>
-          WooCommerce order #{data.merchant_order_id ?? "…"} <External size={11} />
+          {merchantOrderLabel(connector)} #{data.merchant_order_id ?? "…"} <External size={11} />
         </a>
       ) : data.merchant_order_id ? (
-        <span>Merchant order #{data.merchant_order_id}</span>
+        <span>{merchantOrderLabel(connector)} #{data.merchant_order_id}</span>
       ) : null}
       {data.continue_url ? (
         <a href={data.continue_url} target="_blank" rel="noreferrer" className={link}>Open prefilled cart <External size={11} /></a>

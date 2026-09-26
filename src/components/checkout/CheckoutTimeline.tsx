@@ -3,7 +3,7 @@
 import type { CheckoutEvent, CheckoutState } from "../lib/contracts";
 import { STATE_TO_STATUS } from "../lib/contracts";
 import { formatDate, formatMinor, formatMoney, shortId } from "../lib/format";
-import { CONNECTOR_LABELS } from "../lib/methods";
+import { CONNECTOR_LABELS, merchantOrderLabel } from "../lib/methods";
 import { TERMINAL_STATES, useCheckoutFeed } from "../realtime/useCheckoutFeed";
 import type { CheckoutReplayFrame } from "../realtime/types";
 import { Card } from "../ui/Card";
@@ -101,7 +101,7 @@ export function CheckoutTimeline({
         <Card className="px-5 py-5">
           <h2 className="eyebrow mb-3">Events</h2>
           <ol className="flex flex-col" aria-live="polite" aria-label="Checkout events">
-            {events.map((e) => <EventRow key={e.id} event={e} t0={t0} />)}
+            {events.map((e) => <EventRow key={e.id} event={e} t0={t0} connector={checkout?.connector ?? null} />)}
           </ol>
         </Card>
 
@@ -111,7 +111,7 @@ export function CheckoutTimeline({
   );
 }
 
-function EventRow({ event, t0 }: { event: CheckoutEvent; t0: number | null }) {
+function EventRow({ event, t0, connector }: { event: CheckoutEvent; t0: number | null; connector: string | null }) {
   const rel = t0 != null ? ((Date.parse(event.created_at) - t0) / 1000).toFixed(1) : "0.0";
   return (
     <li className="grid animate-rise grid-cols-[3.5rem_minmax(0,1fr)] gap-3 border-t border-line py-3 first:border-t-0 first:pt-0">
@@ -124,7 +124,7 @@ function EventRow({ event, t0 }: { event: CheckoutEvent; t0: number | null }) {
           </Chip>
         </div>
         {event.message ? <p className="mt-1 text-[14px]">{event.message}</p> : null}
-        <PaymentLinks data={event.data} />
+        <PaymentLinks data={event.data} connector={connector} />
       </div>
     </li>
   );
@@ -182,7 +182,7 @@ function CheckoutSummary({ checkout, unavailable, escalationUrl, lastState }: {
           <p className="font-[560]">Merchant order #{checkout.order.merchant_order_id ?? "—"}</p>
           {checkout.order.merchant_order_url ? (
             <a href={checkout.order.merchant_order_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-text hover:underline">
-              Open in {checkout.connector === "woo_store_api" ? "Woo" : "merchant admin"} <External size={12} />
+              Open {merchantOrderLabel(checkout.connector)} <External size={12} />
             </a>
           ) : null}
           <p className="mt-2 text-ink-2">{RAIL_LABEL[checkout.order.payment.rail]} payment reference</p>
