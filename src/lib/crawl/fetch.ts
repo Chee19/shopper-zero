@@ -178,13 +178,14 @@ export function createFetcher(opts: {
       const hit = cache.get(url);
       if (hit) return { ...hit, fromCache: true };
     }
-    const started = Date.now();
+    // ms is network time of the last attempt, excluding the per-host rate-limit queue (probes derive latency from it).
+    let attemptStarted = Date.now();
     const finish = (a: Partial<Attempt> & { blocked?: BlockReason | null }): FetchResult => {
       const status = a.status ?? 0;
       const blocked = a.blocked ?? null;
       const r: FetchResult = {
         url, finalUrl: a.finalUrl ?? url, status, ok: !blocked && status >= 200 && status < 300,
-        headers: a.headers ?? new Headers(), body: a.body ?? "", ms: Date.now() - started, blocked, fromCache: false,
+        headers: a.headers ?? new Headers(), body: a.body ?? "", ms: Date.now() - attemptStarted, blocked, fromCache: false,
       };
       if (r.ok) fetcher.stats.ok++;
       else if (blocked) fetcher.stats.blocked++;
@@ -207,7 +208,10 @@ export function createFetcher(opts: {
       const host = queueFor(u.host);
       let a: Attempt;
       try {
-        a = (await host.q.add(() => once(url, kind, o)))!;
+        a = (await host.q.add(() => {
+          attemptStarted = Date.now();
+          return once(url, kind, o);
+        }))!;
       } catch (e) {
         const wait = backoffMs(attempt, null);
         if (attempt >= retries || Date.now() + wait > deadline - 2000) return finish({ blocked: isTimeout(e) ? "timeout" : "network" });

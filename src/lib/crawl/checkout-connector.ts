@@ -13,11 +13,11 @@ export function checkoutAllowlist(): string[] {
   const hosts = (optionalEnv("CHECKOUT_ALLOWED_DOMAINS") ?? "")
     .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   const demo = optionalEnv("WOO_DEMO_URL");
-  if (demo) hosts.push(new URL(demo).host.toLowerCase());
+  if (demo && URL.canParse(demo)) hosts.push(new URL(demo).host.toLowerCase());
   return [...new Set(hosts)];
 }
 
-const hostOf = (s: ConnectorStore) => new URL(s.base_url).host.toLowerCase();
+const hostOf = (s: ConnectorStore) => (URL.canParse(s.base_url) ? new URL(s.base_url).host.toLowerCase() : "");
 
 export function resolveCheckoutConnector(store: ConnectorStore): CheckoutConnectorId {
   const allowlisted = checkoutAllowlist().includes(hostOf(store));
