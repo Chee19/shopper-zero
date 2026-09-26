@@ -153,17 +153,36 @@ export function buildUpsertRow(input: unknown): BuildResult {
   return { ok: true, row: { ...row, content_hash } };
 }
 
-/** Makes handles unique within one batch: later duplicates get "-" + 6 hex chars of hash(url). */
+/**
+ * Same test as upsert_product_batch's handle_collision: two rows are the same product when their
+ * urls are equal, or when both external_ids are non-null and equal. Anything else is a different product.
+ */
+export function sameProduct(
+  a: { url: string | null; external_id: string | null },
+  b: { url: string | null; external_id: string | null },
+): boolean {
+  return a.url === b.url || (a.external_id !== null && b.external_id !== null && a.external_id === b.external_id);
+}
+
+/**
+ * Deterministic fallback handle for a handle_collision: handle + "-" + 6 hex chars of hash(url).
+ * WS2 retries a handle_collision failure with this handle; the same url always gets the same handle,
+ * so the retry lands on the same row on every later crawl.
+ */
+export const collisionHandle = (handle: string, url: string): string => `${handle}-${shortHash(url).slice(0, 6)}`;
+
+/** Makes handles unique within one batch: a later, different product with a taken handle gets collisionHandle(). */
 export function dedupeHandles(rows: ProductUpsertRow[]): ProductUpsertRow[] {
-  const byHandle = new Map<string, string>(); // handle -> url
+  const byHandle = new Map<string, ProductUpsertRow>(); // handle -> first row that took it
   return rows.map((r) => {
-    const prevUrl = byHandle.get(r.handle);
-    if (prevUrl === undefined || prevUrl === r.url) {
-      byHandle.set(r.handle, r.url);
+    const prev = byHandle.get(r.handle);
+    if (prev === undefined) {
+      byHandle.set(r.handle, r);
       return r;
     }
-    const handle = `${r.handle}-${shortHash(r.url).slice(0, 6)}`;
-    byHandle.set(handle, r.url);
-    return { ...r, handle };
+    if (sameProduct(prev, r)) return r;
+    const row = { ...r, handle: collisionHandle(r.handle, r.url) };
+    if (!byHandle.has(row.handle)) byHandle.set(row.handle, row);
+    return row;
   });
 }

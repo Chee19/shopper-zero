@@ -226,11 +226,23 @@ export async function listStoreProducts(
     : q.order("seq", { ascending: true });
   const { data, error, count } = await q.range(start, start + limit - 1);
   if (error) {
-    // PostgREST answers 416 / PGRST103 when the offset is past the end.
-    if (error.code === "PGRST103") return { products: [], total: count ?? 0 };
+    // PostgREST answers 416 / PGRST103 when the offset is past the end, without a usable count.
+    if (error.code === "PGRST103") return { products: [], total: count ?? (await countStoreProducts(storeId)) };
     throw toAppError(error);
   }
-  return { products: (data as unknown as ProductRow[]).map(toIndexedProduct), total: count ?? 0 };
+  const products = (data as unknown as ProductRow[]).map(toIndexedProduct);
+  return { products, total: count ?? (await countStoreProducts(storeId)) };
+}
+
+/** Same filter as listStoreProducts, count only (head request, no rows). */
+async function countStoreProducts(storeId: string): Promise<number> {
+  const { count, error } = await db()
+    .from("products")
+    .select("id, stores!inner(opted_out)", { count: "exact", head: true })
+    .eq("stores.opted_out", false)
+    .eq("store_id", storeId);
+  if (error) throw toAppError(error);
+  return count ?? 0;
 }
 
 export async function searchProducts(params: SearchParams): Promise<SearchResult> {
@@ -249,13 +261,20 @@ export async function searchProducts(params: SearchParams): Promise<SearchResult
     p_categories: params.categories?.length ? params.categories : undefined,
     p_currency: params.currency?.toUpperCase() ?? undefined,
   };
+  type SearchRow = { id: string; score: number; total_count: number };
   const { data, error } = await db().rpc("search_products", args as never); // generated arg types reject null
   if (error) throw toAppError(error);
-  const rows = (data ?? []) as { id: string; score: number; total_count: number }[];
+  const rows = (data ?? []) as SearchRow[];
   const summaries = await getProductSummaries(rows.map((r) => r.id));
   const scoreById = new Map(rows.map((r) => [r.id, r.score]));
   const products = summaries.map((s) => ({ ...s, score: scoreById.get(s.id) }));
-  const total = rows[0]?.total_count ?? 0;
+  let total = rows[0]?.total_count ?? 0;
+  if (rows.length === 0 && offset > 0) {
+    // Past the end: total_count rides on the rows, so ask again from the start for the total only.
+    const { data: first, error: e2 } = await db().rpc("search_products", { ...args, match_count: 1, match_offset: 0 } as never);
+    if (e2) throw toAppError(e2);
+    total = ((first ?? []) as SearchRow[])[0]?.total_count ?? 0;
+  }
   const next = offset + rows.length;
   return { products, total_count: total, next_offset: next < total ? next : null };
 }

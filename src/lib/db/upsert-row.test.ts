@@ -1,7 +1,7 @@
 // src/lib/db/upsert-row.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildUpsertRow, dedupeHandles, variantKey } from "./upsert-row";
+import { buildUpsertRow, collisionHandle, dedupeHandles, sameProduct, variantKey } from "./upsert-row";
 
 const offer = (amount: number, availability = "in_stock") => ({
   price: { amount, currency: "USD" }, compare_at: null, availability, url: null, checked_at: "2026-09-26T10:00:00.000Z",
@@ -45,8 +45,20 @@ test("buildUpsertRow", () => {
   const redM = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "赤", Size: "M" } } as never);
   const blueM = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "青", Size: "M" } } as never);
   assert.notEqual(redM, blueM);
-  const rows = dedupeHandles([r.row, { ...r.row, url: "https://x.com/other" }, r.row]);
+  const other = "https://x.com/other";
+  const rows = dedupeHandles([
+    r.row,
+    { ...r.row, url: other, external_id: "999" },   // different product (different external_id)
+    r.row,                                           // same url: same product
+    { ...r.row, url: "https://x.com/moved" },        // same non-null external_id: same product, url moved
+    { ...r.row, url: "https://x.com/nulls", external_id: null }, // url differs, one external_id null: different
+  ]);
   assert.equal(rows[0].handle, "hoodie");
+  assert.equal(rows[1].handle, collisionHandle("hoodie", other));
   assert.match(rows[1].handle, /^hoodie-[0-9a-f]{6}$/);
   assert.equal(rows[2].handle, "hoodie");
+  assert.equal(rows[3].handle, "hoodie");
+  assert.equal(rows[4].handle, collisionHandle("hoodie", "https://x.com/nulls"));
+  assert.equal(sameProduct({ url: "a", external_id: null }, { url: "b", external_id: null }), false);
+  assert.equal(sameProduct({ url: "a", external_id: "1" }, { url: "b", external_id: "1" }), true);
 });

@@ -696,6 +696,10 @@ export type Database = {
         Args: { arr: string[]; sep: string }
         Returns: string
       }
+      merge_store_json: {
+        Args: { p_metadata?: Json; p_readiness?: Json; p_store_id: string }
+        Returns: boolean
+      }
       search_products: {
         Args: {
           match_count?: number

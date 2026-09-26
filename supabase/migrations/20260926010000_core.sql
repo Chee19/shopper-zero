@@ -116,7 +116,17 @@ alter table public.products
 
 create unique index products_store_handle_uq on public.products (store_id, handle);
 create index products_fts_idx on public.products using gin (fts);
-create index products_title_trgm on public.products using gin (title extensions.gin_trgm_ops);
+-- pg_trgm may already live in another schema (e.g. public) on a hosted project, where
+-- "create extension if not exists ... with schema extensions" above is a no-op, so the
+-- opclass is qualified with whatever schema the extension is actually installed in.
+do $$
+declare v_schema text;
+begin
+  select n.nspname into strict v_schema
+    from pg_extension e join pg_namespace n on n.oid = e.extnamespace
+   where e.extname = 'pg_trgm';
+  execute format('create index products_title_trgm on public.products using gin (title %I.gin_trgm_ops)', v_schema);
+end $$;
 create index products_filter_idx on public.products (store_id, available, price_min_minor);
 create index products_brand_idx on public.products (lower(brand));
 create index products_store_seq_idx on public.products (store_id, seq);
@@ -247,7 +257,7 @@ create table public.checkout_events (
   checkout_id uuid not null references public.checkouts(id) on delete cascade,
   from_state text,
   to_state text not null,
-  message text,                                          -- human-readable, NO PII (public timeline)
+  message text,                                          -- human-readable, NO PII (shown on the public timeline page via a server route)
   data jsonb not null default '{}'::jsonb,               -- {payment_intent, tx_hash, merchant_order_id, ...}; NO PII
   created_at timestamptz not null default now()
 );
@@ -307,9 +317,12 @@ create trigger orders_updated_at before update on public.orders
 
 -- =====================================================================
 -- 8. RLS
--- Public read: stores, products, crawl_runs (policies from init.sql),
---              product_variants, scans, checkout_events (below).
--- Service-role only (RLS on, no policies): store_claims, checkouts, orders, agent_requests.
+-- Public read: stores, crawl_runs (policies from init.sql), scans (below),
+--              products + product_variants of stores that have NOT opted out (below).
+-- Service-role only (RLS on, no policies, no anon/authenticated grants):
+--   store_claims, checkouts, checkout_events, orders, agent_requests.
+--   checkout_events is service-role only because every row carries a checkout id;
+--   the checkout timeline reads it through a server route (WS5), not Realtime.
 -- No insert/update/delete policies anywhere: all writes go through the
 -- service-role (secret key) client, which bypasses RLS.
 -- =====================================================================
@@ -321,10 +334,15 @@ alter table public.checkout_events enable row level security;
 alter table public.orders enable row level security;
 alter table public.agent_requests enable row level security;
 
+-- init.sql made every product readable; opted-out stores must disappear from the Data API too.
+-- (stores itself stays readable: the UI shows the opted-out state.)
+drop policy if exists "products are publicly readable" on public.products;
+create policy "products are publicly readable" on public.products
+  for select to anon, authenticated
+  using (exists (select 1 from public.stores s where s.id = products.store_id and not s.opted_out));
 create policy "variants are publicly readable" on public.product_variants
-  for select to anon, authenticated using (true);
-create policy "checkout events are publicly readable" on public.checkout_events
-  for select to anon, authenticated using (true);
+  for select to anon, authenticated
+  using (exists (select 1 from public.stores s where s.id = product_variants.store_id and not s.opted_out));
 create policy "scans are publicly readable" on public.scans
   for select to anon, authenticated using (true);
 
@@ -333,14 +351,23 @@ create policy "scans are publicly readable" on public.scans
 -- everything we rely on (idempotent and harmless on legacy projects).
 grant usage on schema public to anon, authenticated, service_role;
 grant select on public.stores, public.products, public.product_variants,
-                public.crawl_runs, public.scans, public.checkout_events
+                public.crawl_runs, public.scans
   to anon, authenticated;
+-- Older projects auto-grant ALL on new public tables to the Data API roles; RLS already
+-- denies them, but revoke too so the private tables are closed at both layers.
+revoke all on public.store_claims, public.checkouts, public.checkout_events,
+              public.orders, public.agent_requests
+  from anon, authenticated;
+-- Public-read tables: read only (TRUNCATE is not subject to RLS).
+revoke insert, update, delete, truncate, references, trigger
+  on public.stores, public.products, public.product_variants, public.crawl_runs, public.scans
+  from anon, authenticated;
 grant all on all tables in schema public to service_role;
 grant usage, select on all sequences in schema public to service_role;
 
 -- =====================================================================
--- 9. REALTIME: scan page (scans), indexing progress (crawl_runs, stores)
---    and checkout timeline (checkout_events)
+-- 9. REALTIME: scan page (scans) and indexing progress (crawl_runs, stores).
+--    checkout_events is deliberately NOT published (it is service-role only).
 -- =====================================================================
 do $$
 declare t text;
@@ -348,7 +375,13 @@ begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     create publication supabase_realtime;
   end if;
-  foreach t in array array['crawl_runs', 'checkout_events', 'stores', 'scans'] loop
+  if exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'checkout_events'
+  ) then
+    alter publication supabase_realtime drop table public.checkout_events;
+  end if;
+  foreach t in array array['crawl_runs', 'stores', 'scans'] loop
     if not exists (
       select 1 from pg_publication_tables
        where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
@@ -397,9 +430,11 @@ end $$;
 -- p_products: ProductUpsertRow[] as built by src/lib/db/upsert-row.ts (§6.4).
 -- WS2 CCR-1 semantics (B12). Per product, in its own sub-block (one bad product
 -- never fails the batch):
---   * upsert on (store_id, handle); an unchanged content_hash only bumps last_seen_at;
---   * a different product already holding the handle (different url AND a different
---     non-null external_id) -> status 'failed', error 'handle_collision';
+--   * upsert on (store_id, handle); an unchanged content_hash only bumps last_seen_at
+--     (and checked_at of the live variants, position < 1000);
+--   * a different product already holding the handle -> status 'failed', error
+--     'handle_collision'. "Different" = the stored url differs from the incoming url,
+--     unless both external_ids are non-null and equal (same product, url moved);
 --   * variants upsert on (product_id, external_id) and keep their uuids;
 --   * variants missing from the payload are NOT deleted: available=false,
 --     availability='out_of_stock', position + 1000 (sort last);
@@ -444,14 +479,16 @@ begin
        where pr.store_id = p_store_id and pr.handle = p->>'handle';
 
       if found and v_existing.url is distinct from p->>'url'
-         and v_existing.external_id is not null and p->>'external_id' is not null
-         and v_existing.external_id <> p->>'external_id' then
+         and not (v_existing.external_id is not null and p->>'external_id' is not null
+                  and v_existing.external_id = p->>'external_id') then
         raise exception using errcode = '23505', message = 'handle_collision';
       end if;
 
       if found and v_existing.content_hash is not null
          and v_existing.content_hash = p->>'content_hash' then
         update public.products set last_seen_at = v_seen where id = v_existing.id;
+        update public.product_variants set checked_at = v_seen
+         where product_variants.product_id = v_existing.id and position < 1000;
         product_id := v_existing.id;
         status := 'unchanged';
         return next;
@@ -575,6 +612,9 @@ begin
     return next;
   end loop;
 
+  -- Lock the store row in its own statement first: a concurrent batch for the same store
+  -- then waits here, and the count below runs with a fresh snapshot that sees its rows.
+  perform 1 from public.stores where id = p_store_id for update;
   update public.stores s
      set product_count = (select count(*) from public.products pr where pr.store_id = p_store_id)
    where s.id = p_store_id;
@@ -606,17 +646,33 @@ set search_path = public, extensions
 as $$
   with q as (
     select nullif(btrim(query_text), '') as qt
+  ), q2 as (
+    select
+      qt,
+      -- the query without its negated terms (-word, -"a phrase"): the "any term" and
+      -- trigram paths must never match on a term the caller asked to exclude
+      nullif(btrim(regexp_replace(qt, '(^|\s)-("[^"]*("|$)|\S+)', ' ', 'g')), '') as qt_pos
+    from q
   ), qq as (
     select
       qt,
+      qt_pos,
       -- all terms (Google-style syntax: "exact phrase", -exclude, or)
       case when qt is null then null else websearch_to_tsquery('english', qt) end as tsq_all,
-      -- any term: OR of the stemmed lexemes, so "hoodie under 50" still finds hoodies
-      case when qt is null then null else (
+      -- any term: OR of the stemmed lexemes of the non-negated terms,
+      -- so "hoodie under 50" still finds hoodies
+      case when qt_pos is null then null else (
         select to_tsquery('simple', string_agg(quote_literal(l), ' | '))
-          from unnest(tsvector_to_array(to_tsvector('english', qt))) as l
-      ) end as tsq_any
-    from q
+          from unnest(tsvector_to_array(to_tsvector('english', qt_pos))) as l
+      ) end as tsq_any,
+      -- excluded: OR of the negated terms (a negated phrase stays a phrase)
+      case when qt is null then null else (
+        select string_agg('(' || n.tq::text || ')', ' | ')::tsquery
+          from (select websearch_to_tsquery('english', ltrim(m[1], '-')) as tq
+                  from regexp_matches(qt, '(?:^|\s)-("[^"]*(?:"|$)|\S+)', 'g') as m) n
+         where numnode(n.tq) > 0
+      ) end as tsq_neg
+    from q2
   ), matches as (
     select
       p.id,
@@ -624,7 +680,7 @@ as $$
       (case when qq.qt is null then 0
             else coalesce(ts_rank_cd(p.fts, qq.tsq_any), 0)
                + (case when p.fts @@ qq.tsq_all then 1 else 0 end)
-               + word_similarity(qq.qt, p.title)
+               + coalesce(word_similarity(qq.qt_pos, p.title), 0)
        end)::real as score
     from public.products p
     join public.stores s on s.id = p.store_id and not s.opted_out
@@ -639,9 +695,10 @@ as $$
            or lower(p.category) = any (select lower(c) from unnest(p_categories) as c)
            or lower(p.product_type) = any (select lower(c) from unnest(p_categories) as c))
       and (qq.qt is null
-           or p.fts @@ qq.tsq_all
-           or coalesce(p.fts @@ qq.tsq_any, false)
-           or qq.qt <% p.title)
+           or ((p.fts @@ qq.tsq_all
+                or coalesce(p.fts @@ qq.tsq_any, false)
+                or coalesce(qq.qt_pos <% p.title, false))
+               and not coalesce(p.fts @@ qq.tsq_neg, false)))
   )
   select m.id, m.score, count(*) over () as total_count
   from matches m
@@ -649,6 +706,21 @@ as $$
   limit greatest(1, least(coalesce(match_count, 10), 50))
   offset greatest(coalesce(match_offset, 0), 0);
 $$;
+
+-- word_similarity() and <% resolve through search_path. It covers public and extensions,
+-- the two usual homes of pg_trgm; if it lives anywhere else, append that schema.
+do $$
+declare v_schema text;
+begin
+  select n.nspname into strict v_schema
+    from pg_extension e join pg_namespace n on n.oid = e.extnamespace
+   where e.extname = 'pg_trgm';
+  if v_schema not in ('public', 'extensions') then
+    execute format(
+      'alter function public.search_products(text, integer, integer, uuid, bigint, bigint, boolean, text[], text[], text, text) '
+      'set search_path = public, extensions, %I', v_schema);
+  end if;
+end $$;
 
 -- =====================================================================
 -- 12. RPC: get_public_metrics  (safe aggregate counts for the UI metrics strip)
@@ -688,9 +760,42 @@ as $$
   );
 $$;
 
--- Function privileges: functions are EXECUTE-able by PUBLIC by default; lock the writer down.
+-- =====================================================================
+-- 13. RPC: merge_store_json  (service role only; called by db.updateStore / setStoreReadiness)
+-- Shallow-merges into stores.metadata and/or stores.readiness in one UPDATE, so
+-- concurrent writers never lose each other's keys (no read-modify-write in the app).
+-- Top-level keys of the patch replace the stored ones (= JS object spread).
+-- Returns false when the store does not exist.
+-- =====================================================================
+create or replace function public.merge_store_json(
+  p_store_id uuid,
+  p_metadata jsonb default null,
+  p_readiness jsonb default null
+)
+returns boolean
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if (p_metadata is not null and jsonb_typeof(p_metadata) <> 'object')
+     or (p_readiness is not null and jsonb_typeof(p_readiness) <> 'object') then
+    raise exception using errcode = '22023', message = 'merge_store_json: patches must be JSON objects';
+  end if;
+  update public.stores
+     set metadata  = case when p_metadata  is null then metadata
+                          else coalesce(metadata, '{}'::jsonb) || p_metadata end,
+         readiness = case when p_readiness is null then readiness
+                          else coalesce(readiness, '{}'::jsonb) || p_readiness end
+   where id = p_store_id;
+  return found;
+end;
+$$;
+
+-- Function privileges: functions are EXECUTE-able by PUBLIC by default; lock the writers down.
 revoke execute on function public.upsert_product_batch(uuid, jsonb, timestamptz) from public, anon, authenticated;
 grant execute on function public.upsert_product_batch(uuid, jsonb, timestamptz) to service_role;
+revoke execute on function public.merge_store_json(uuid, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.merge_store_json(uuid, jsonb, jsonb) to service_role;
 grant execute on function public.search_products(text, integer, integer, uuid, bigint, bigint, boolean, text[], text[], text, text)
   to anon, authenticated, service_role;
 grant execute on function public.get_public_metrics() to anon, authenticated, service_role;

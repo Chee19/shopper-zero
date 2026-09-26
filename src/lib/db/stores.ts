@@ -10,7 +10,7 @@ import { normalizeStoreUrl, type NormalizedStoreUrl } from "@/lib/slug";
 import { db } from "./client";
 import { toStore, toStoreSummary, type StoreRow } from "./mappers";
 import { STORE_SELECT } from "./selects";
-import type { TablesUpdate } from "./types.gen";
+import type { Json, TablesUpdate } from "./types.gen";
 import { asJson, clampInt, isMalformed, isUniqueViolation, isUuid } from "./util";
 
 /** WS2 CCR-2 / WS5 CCR-7: the one row → Store mapper for server code (= toStore(row, appUrl())). */
@@ -129,9 +129,6 @@ export interface StorePatch {
   checkout_methods?: string[];      // legacy init.sql column stores.checkout_methods (display only)
 }
 
-const asObject = (v: unknown): Record<string, unknown> =>
-  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-
 export async function updateStore(id: string, patch: StorePatch): Promise<Store> {
   const u: TablesUpdate<"stores"> = {};
   if (patch.name !== undefined) u.name = patch.name;
@@ -149,11 +146,8 @@ export async function updateStore(id: string, patch: StorePatch): Promise<Store>
   if (patch.base_url !== undefined) u.base_url = patch.base_url;
   if (patch.checkout_methods !== undefined) u.checkout_methods = patch.checkout_methods;
   if (patch.metadata !== undefined) {
-    // Merged, not replaced: read, spread, write.
-    const { data, error } = await db().from("stores").select("metadata").eq("id", id).maybeSingle();
-    if (error) throw toAppError(error);
-    if (!data) throw new AppError("not_found", "Store not found", { id });
-    u.metadata = asJson({ ...asObject(data.metadata), ...patch.metadata });
+    // Merged, not replaced: one SQL update (metadata || patch), so concurrent writers keep each other's keys.
+    await mergeStoreJson(id, { p_metadata: asJson(patch.metadata) });
   }
   if (Object.keys(u).length === 0) {
     const store = await getStoreById(id);
@@ -166,14 +160,15 @@ export async function updateStore(id: string, patch: StorePatch): Promise<Store>
   return rowToStore(data);
 }
 
-/** Merges into stores.readiness[phase] without touching the other phase. */
+/** Merges into stores.readiness[phase] without touching the other phase (one SQL update). */
 export async function setStoreReadiness(id: string, phase: "before" | "after", report: ReadinessReport): Promise<void> {
-  const { data, error } = await db().from("stores").select("readiness").eq("id", id).maybeSingle();
+  await mergeStoreJson(id, { p_readiness: asJson({ [phase]: report }) });
+}
+
+/** Shallow jsonb merge into stores.metadata / stores.readiness (service-role RPC). Throws not_found. */
+async function mergeStoreJson(id: string, patch: { p_metadata?: Json; p_readiness?: Json }): Promise<void> {
+  if (!isUuid(id)) throw new AppError("not_found", "Store not found", { id });
+  const { data, error } = await db().rpc("merge_store_json", { p_store_id: id, ...patch });
   if (error) throw toAppError(error);
   if (!data) throw new AppError("not_found", "Store not found", { id });
-  const { error: upErr } = await db()
-    .from("stores")
-    .update({ readiness: asJson({ ...asObject(data.readiness), [phase]: report }) })
-    .eq("id", id);
-  if (upErr) throw toAppError(upErr);
 }

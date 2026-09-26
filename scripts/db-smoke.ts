@@ -3,6 +3,7 @@
 // Wrapped in main(): the file runs as CommonJS under tsx, where top-level await is not allowed.
 // Every row it creates is removed at the end (fixed seed ids are only read, never changed).
 import assert from "node:assert/strict";
+import { createClient } from "@supabase/supabase-js";
 import {
   db, getStoreBySlug, searchProducts, getProduct, lookupProducts, listStoreProducts,
   upsertStoreProducts, getPublicMetrics, logAgentRequest, getVariantsForCheckout,
@@ -23,6 +24,16 @@ const HOODIE = "22222222-2222-4222-8222-222222222201";
 const HOODIE_S = "33333333-3333-4333-8333-333333333301";
 const SEED_SCAN = "55555555-5555-4555-8555-555555555501";
 const SMOKE_HANDLE = "smoke-beanie";
+const SMOKE_TOOL = "db-smoke";
+const SEEN = "2030-01-01T00:00:00.000Z";
+
+/** Publishable-key client: what a browser (anon) sees through the Data API, RLS applied. */
+function anon() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  assert.ok(url && key, "NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY missing");
+  return createClient(url, key, { auth: { persistSession: false } });
+}
 
 async function rejectsWith(p: Promise<unknown>, code: string): Promise<void> {
   await assert.rejects(p, (e) => isAppError(e) && e.code === code);
@@ -31,6 +42,7 @@ async function rejectsWith(p: Promise<unknown>, code: string): Promise<void> {
 async function main() {
   // Leftovers from an aborted earlier run.
   await db().from("products").delete().eq("store_id", STORE).eq("handle", SMOKE_HANDLE);
+  await db().from("agent_requests").delete().eq("tool", SMOKE_TOOL);
 
   const store = await getStoreBySlug("demo-store-example");
   assert.ok(store, "seed store missing: run npm run db:reset");
@@ -39,6 +51,14 @@ async function main() {
   const s = await searchProducts({ query: "hoodie", max_minor: 5000 });
   assert.equal(s.products[0]?.id, HOODIE);
   assert.equal(s.products[0].price_range.min.amount, 4500);
+  // Negated terms exclude, on every match path (all terms, any term, trigram).
+  assert.ok(!(await searchProducts({ query: "hoodie -classic", available: null })).products.some((p) => p.id === HOODIE));
+  const neg = await searchProducts({ query: "-hoodie", available: null });
+  assert.ok(!neg.products.some((p) => p.id === HOODIE));
+  assert.ok(neg.products.length >= 2);
+  // Past the end: no rows, but the total is still reported.
+  const past = await searchProducts({ query: "hoodie", offset: 20 });
+  assert.deepEqual([past.products.length, past.total_count, past.next_offset], [0, 1, null]);
 
   const byVariant = await getProduct(HOODIE_S);
   assert.ok(byVariant);
@@ -53,6 +73,8 @@ async function main() {
   const page = await listStoreProducts(store.id, { limit: 2, page: 1 });
   assert.equal(page.products.length, 2);
   assert.ok(page.total >= 3);
+  const pastPage = await listStoreProducts(store.id, { limit: 2, page: 99 });
+  assert.deepEqual([pastPage.products.length, pastPage.total], [0, page.total]);
 
   const [group] = await getVariantsForCheckout([{ variant_id: HOODIE_S, quantity: 2 }]);
   assert.ok(group);
@@ -78,10 +100,16 @@ async function main() {
     const b = await getProduct(up1.product_ids[0]);
     assert.deepEqual(b?.variants.map((v) => [v.title, v.offer.availability]), [["Blue", "in_stock"], ["Red", "out_of_stock"]]);
     assert.equal(b?.variants[0].id, blueId);                 // Blue kept its uuid
-    const same = await upsertStoreProducts(store.id, [beanie(["Blue"])]);
+    const same = await upsertStoreProducts(store.id, [beanie(["Blue"])], { seenAt: SEEN });
     assert.equal(same.unchanged, 1);                         // unchanged content_hash: write skipped
+    const seenVariants = (await getProduct(up1.product_ids[0]))?.variants ?? [];
+    assert.deepEqual(seenVariants.map((v) => [v.title, Date.parse(v.offer.checked_at) === Date.parse(SEEN)]),
+      [["Blue", true], ["Red", false]]);                     // live variants re-observed, stale one not
     const clash = await upsertStoreProducts(store.id, [{ ...beanie(["Blue"]), external_id: "other", url: "https://demo-store.example/p/other/" }]);
     assert.deepEqual(clash.failed.map((f) => f.error), ["handle_collision"]);
+    const clashNull = await upsertStoreProducts(store.id, [{ ...beanie(["Blue"]), external_id: null, url: "https://demo-store.example/p/other/" }]);
+    assert.deepEqual(clashNull.failed.map((f) => f.error), ["handle_collision"]); // one external_id null, url differs
+    assert.equal((await getProduct(up1.product_ids[0]))?.variants[0].id, blueId); // variant uuids not taken over
     assert.equal((await getStoreBySlug("demo-store-example"))?.product_count, 4);
     const invalid = await upsertStoreProducts(store.id, [{ ...beanie(["Blue"]), variants: [] }]);
     assert.deepEqual([invalid.upserted, invalid.skipped.length], [0, 1]);
@@ -169,6 +197,8 @@ async function main() {
     const ready = await getStoreById(smokeStoreId);
     assert.deepEqual([ready?.readiness.before?.grade, ready?.readiness.after?.grade], ["F", "A"]);
     await rejectsWith(updateStore("00000000-0000-4000-8000-000000000000", { name: "x" }), "not_found");
+    await rejectsWith(updateStore("00000000-0000-4000-8000-000000000000", { metadata: { x: 1 } }), "not_found");
+    await rejectsWith(setStoreReadiness("00000000-0000-4000-8000-000000000000", "after", report), "not_found");
 
     // crawl runs
     const run = await createCrawlRun(smokeStoreId);
@@ -199,8 +229,17 @@ async function main() {
     assert.ok((await getClaim(smokeStoreId))?.verified_at);
     assert.equal((await getStoreById(smokeStoreId))?.claimed, true);
     assert.equal((await upsertClaim(smokeStoreId, "dns_txt")).verified_at, null);
+    const optProduct = await upsertStoreProducts(smokeStoreId, [beanie(["Blue"])]);
+    assert.equal(optProduct.upserted, 1);
+    const anonProducts = () => anon().from("products").select("id, product_variants(id)").eq("store_id", smokeStoreId!);
+    const anonVariants = () => anon().from("product_variants").select("id").eq("store_id", smokeStoreId!);
+    assert.equal((await anonProducts()).data?.length, 1);
     await setStoreOptOut(smokeStoreId, true);
     assert.equal((await getStoreById(smokeStoreId))?.opted_out, true);
+    // Opted out: hidden from the public Data API (products and variants); the store row stays readable.
+    assert.deepEqual((await anonProducts()).data, []);
+    assert.deepEqual((await anonVariants()).data, []);
+    assert.equal((await anon().from("stores").select("opted_out").eq("id", smokeStoreId).single()).data?.opted_out, true);
     assert.ok(!(await listStores({ query: `db-smoke-${tag}` })).some((x) => x.id === smokeStoreId));
     assert.ok((await listStores({ query: `db-smoke-${tag}`, include_opted_out: true })).some((x) => x.id === smokeStoreId));
 
@@ -221,6 +260,11 @@ async function main() {
     await insertCheckoutEvent({ checkout_id: co.id, from_state: null, to_state: "quoting", message: "created", data: {} });
     await insertCheckoutEvent({ checkout_id: co.id, from_state: "quoting", to_state: "awaiting_payment", message: null, data: { rail: "x402" } });
     assert.deepEqual((await listCheckoutEvents(co.id)).map((e) => e.to_state), ["quoting", "awaiting_payment"]);
+    // Service-role only: the Data API roles cannot read checkout ids.
+    for (const table of ["checkout_events", "checkouts", "orders", "agent_requests", "store_claims"] as const) {
+      const { data: leaked, error: denied } = await anon().from(table).select("*").limit(1);
+      assert.ok(denied && !leaked, `${table} must not be readable by anon`);
+    }
     const order = await insertOrder({
       checkout_id: co.id, store_id: smokeStoreId, status: "placed", merchant_order_id: "42", merchant_order_url: null,
       payment: { rail: "x402", reference: "0xabc", amount: { amount: 4500, currency: "USD" }, payer: "0x1" },
@@ -232,7 +276,7 @@ async function main() {
     assert.equal((await updateOrderStatus(order.id, "confirmed")).status, "confirmed");
 
     // metrics
-    await logAgentRequest({ surface: "rest", tool: "db-smoke", store_id: store.id });
+    await logAgentRequest({ surface: "rest", tool: SMOKE_TOOL, store_id: store.id });
     await logAgentRequest({ surface: "bogus" as never, store_id: "not-a-uuid" }); // must not throw
     const m = await getPublicMetrics();
     assert.ok(m.products >= 4 && m.agent_requests >= 1);
@@ -244,6 +288,7 @@ async function main() {
       await db().from("stores").delete().eq("id", smokeStoreId);
     }
     if (scanIds.length) await db().from("scans").delete().in("id", scanIds);
+    await db().from("agent_requests").delete().eq("tool", SMOKE_TOOL);
     await db().from("products").delete().eq("store_id", STORE).eq("handle", SMOKE_HANDLE);
     // Restore the seed product_count (the delete above does not go through upsert_product_batch).
     const { count } = await db().from("products").select("id", { count: "exact", head: true }).eq("store_id", STORE);
