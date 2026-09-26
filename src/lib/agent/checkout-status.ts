@@ -7,11 +7,10 @@ import type { ProfileCheckout } from "@/lib/formats/ucp";
 /** WS3 flips this to true once WS4's MCP checkout milestone (04 M6) passes end to end. */
 export const CHECKOUT_TOOLS_LIVE: boolean = false;
 
-/** Same env rules as WS4's paymentHandlers(): Stripe if a key is set, x402 if a pay-to address is set. */
+/** Stripe-only MVP (DECISIONS, 26 Sep): the Stripe handler is advertised only with a test key. */
 export function enabledRails(): PaymentRailId[] {
   const r: PaymentRailId[] = [];
-  if (optionalEnv("STRIPE_SECRET_KEY")) r.push("stripe_spt");
-  if (optionalEnv("X402_PAY_TO")) r.push("x402");
+  if (optionalEnv("STRIPE_SECRET_KEY")?.startsWith("sk_test_")) r.push("stripe_spt");
   return r;
 }
 
@@ -32,10 +31,5 @@ export const agentCheckoutFor = (s: Pick<Store, "checkout_connector">) =>
 /** Profile checkout block, or null when checkout must not be claimed (see checkoutLive). */
 export function profileCheckout(claim: boolean): ProfileCheckout | null {
   if (!claim || !checkoutLive()) return null;
-  return {
-    rails: enabledRails(),
-    stripeEnvironment: optionalEnv("STRIPE_SECRET_KEY")?.startsWith("sk_live_") ? "live" : "test",
-    x402Network: optionalEnv("X402_NETWORK") ?? "eip155:84532",
-    x402Facilitator: optionalEnv("X402_FACILITATOR_URL") ?? "https://x402.org/facilitator",
-  };
+  return { rails: enabledRails() };
 }

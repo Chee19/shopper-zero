@@ -108,7 +108,7 @@ export function renderStoreLlmsTxt({ base, store, products, agentCheckout, scan 
   const name = mdInline(s.name ?? "") || mdInline(s.domain);
   const label = platformLabel(s.platform);
   const storeCheckoutLine = agentCheckout
-    ? `Agents can buy headlessly through ShoperZero. create_checkout returns "ready_for_complete"; pay with a Stripe Shared Payment Token or x402 USDC (see payment.handlers).`
+    ? `Agents can buy headlessly through ShoperZero. create_checkout returns "ready_for_complete"; pay with a Stripe test Shared Payment Token (see payment.handlers).`
     : `Headless checkout is not available. create_checkout returns "requires_escalation" with continue_url, a prefilled cart or product page on the merchant's site where the buyer finishes.`;
 
   const statusLines = [`Index status: ${s.status}${s.claimed ? " (verified by the merchant)" : ""}`];

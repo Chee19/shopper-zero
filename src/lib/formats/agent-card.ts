@@ -33,7 +33,7 @@ export function buildAgentCard(base: string) {
         id: "checkout",
         name: "Checkout",
         description:
-          "Create and complete a checkout paid by Stripe SPT or x402, or hand off to the merchant (MCP tools create_checkout, complete_checkout).",
+          "Create and complete a checkout paid by Stripe test payments, or hand off to the merchant (MCP tools create_checkout, complete_checkout).",
         tags: ["shopping", "checkout", "payments"],
       },
     ],

@@ -192,9 +192,6 @@ const HANDLER_VERSION = "2026-09-26";
 
 export interface ProfileCheckout {
   rails: PaymentRailId[];
-  stripeEnvironment: "test" | "live";
-  x402Network: string;
-  x402Facilitator: string;
 }
 
 export interface BuildUcpProfileOptions {
@@ -228,29 +225,17 @@ export function buildUcpProfile({ base, store, version = UCP_VERSION, checkout =
       { extends: ["dev.ucp.shopping.checkout"] },
     );
     capabilities["dev.ucp.shopping.order"] = capability(v, "specification/shopping/order/", "order.json");
+    // Stripe-only MVP: the Stripe test handler is the only one we advertise; environment is always "test".
     for (const rail of checkout.rails) {
+      if (rail !== "stripe_spt") continue;
       const id = PAYMENT_HANDLER_IDS[rail];
       paymentHandlers[id] = [
-        rail === "stripe_spt"
-          ? {
-              id,
-              version: HANDLER_VERSION,
-              spec: `${base}/llms.txt`,
-              config: { rail, accepted: ["card"], credential_type: "spt", environment: checkout.stripeEnvironment },
-            }
-          : {
-              id,
-              version: HANDLER_VERSION,
-              spec: "https://x402.org",
-              config: {
-                rail,
-                scheme: "exact",
-                network: checkout.x402Network,
-                asset: "USDC",
-                flow: "upfront",
-                facilitator: checkout.x402Facilitator,
-              },
-            },
+        {
+          id,
+          version: HANDLER_VERSION,
+          spec: `${base}/llms.txt`,
+          config: { rail, accepted: ["card"], credential_type: "spt", environment: "test" },
+        },
       ];
     }
   }
