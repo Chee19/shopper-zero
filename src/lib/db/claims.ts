@@ -1,32 +1,92 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- stub parameters, removed with the T+60 bodies */
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { ClaimMethod, StoreClaim } from "@/lib/contracts";
-import { AppError } from "@/lib/errors";
+import { AppError, toAppError } from "@/lib/errors";
+import { db } from "./client";
+import { iso, isoOrNull } from "./mappers";
+import type { Tables } from "./types.gen";
+import { isUniqueViolation, isUuid } from "./util";
 
-// TODO(WS1 T+60)
+const newToken = (): string => randomUUID().replaceAll("-", "");
+
+const toStoreClaim = (r: Tables<"store_claims">): StoreClaim => ({
+  store_id: r.store_id,
+  method: r.method as ClaimMethod,
+  token: r.token,
+  verified_at: isoOrNull(r.verified_at),
+  created_at: iso(r.created_at),
+});
+
 /** Creates or rotates the claim token for a store. */
 export async function upsertClaim(storeId: string, method: ClaimMethod): Promise<StoreClaim> {
-  throw new AppError("not_implemented", "upsertClaim");
+  const { data, error } = await db()
+    .from("store_claims")
+    .upsert({ store_id: storeId, method, token: newToken(), verified_at: null }, { onConflict: "store_id" })
+    .select("*")
+    .single();
+  if (error) throw toAppError(error);
+  return toStoreClaim(data);
 }
 
-// TODO(WS1 T+60)
 /** Non-rotating: returns the existing claim (updating only `method` if it differs), else creates one. Use for page loads. */
 export async function getOrCreateClaim(storeId: string, method?: ClaimMethod): Promise<StoreClaim> {
-  throw new AppError("not_implemented", "getOrCreateClaim");
+  const existing = await getClaim(storeId);
+  if (existing) {
+    if (!method || method === existing.method) return existing;
+    const { data, error } = await db()
+      .from("store_claims")
+      .update({ method })
+      .eq("store_id", storeId)
+      .select("*")
+      .single();
+    if (error) throw toAppError(error);
+    return toStoreClaim(data);
+  }
+  const { data, error } = await db()
+    .from("store_claims")
+    .insert({ store_id: storeId, method: method ?? "dns_txt", token: newToken() })
+    .select("*")
+    .single();
+  if (error) {
+    // A concurrent page load created it first: return that one (the token must not rotate).
+    if (isUniqueViolation(error)) {
+      const raced = await getClaim(storeId);
+      if (raced) return raced;
+    }
+    throw toAppError(error);
+  }
+  return toStoreClaim(data);
 }
 
-// TODO(WS1 T+60)
 export async function getClaim(storeId: string): Promise<StoreClaim | null> {
-  throw new AppError("not_implemented", "getClaim");
+  if (!isUuid(storeId)) return null;
+  const { data, error } = await db().from("store_claims").select("*").eq("store_id", storeId).maybeSingle();
+  if (error) throw toAppError(error);
+  return data ? toStoreClaim(data) : null;
 }
 
-// TODO(WS1 T+60)
 /** Sets store_claims.verified_at and stores.claimed_at = now(). */
 export async function markClaimVerified(storeId: string): Promise<void> {
-  throw new AppError("not_implemented", "markClaimVerified");
+  const now = new Date().toISOString();
+  const { data, error } = await db()
+    .from("store_claims")
+    .update({ verified_at: now })
+    .eq("store_id", storeId)
+    .select("store_id")
+    .maybeSingle();
+  if (error) throw toAppError(error);
+  if (!data) throw new AppError("not_found", "No claim for this store", { store_id: storeId });
+  const { error: storeErr } = await db().from("stores").update({ claimed_at: now }).eq("id", storeId);
+  if (storeErr) throw toAppError(storeErr);
 }
 
-// TODO(WS1 T+60)
 export async function setStoreOptOut(storeId: string, optedOut: boolean): Promise<void> {
-  throw new AppError("not_implemented", "setStoreOptOut");
+  const { data, error } = await db()
+    .from("stores")
+    .update({ opted_out: optedOut })
+    .eq("id", storeId)
+    .select("id")
+    .maybeSingle();
+  if (error) throw toAppError(error);
+  if (!data) throw new AppError("not_found", "Store not found", { id: storeId });
 }
