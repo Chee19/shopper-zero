@@ -1,5 +1,6 @@
 // src/lib/checkout/index.ts  → WS4 (replace bodies, keep names + types)
 // STUB created by WS1 at T+30. Owned by WS4 from then on: replace bodies, keep signatures.
+import "server-only";
 import type { CheckoutService } from "@/lib/contracts";
 import { AppError } from "@/lib/errors";
 

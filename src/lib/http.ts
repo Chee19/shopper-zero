@@ -79,8 +79,16 @@ export function route<Ctx>(
     const requestId = getRequestId(req);
     const started = Date.now();
     try {
-      const res = await handler(req, ctx, { requestId });
-      if (!res.headers.has("Request-Id")) res.headers.set("Request-Id", requestId);
+      let res = await handler(req, ctx, { requestId });
+      if (!res.headers.has("Request-Id")) {
+        try {
+          res.headers.set("Request-Id", requestId);
+        } catch {
+          // Response.redirect() / fetch() responses have immutable headers.
+          res = new Response(res.body, res);
+          res.headers.set("Request-Id", requestId);
+        }
+      }
       log.info("http.request", { route: name, method: req.method, status: res.status, ms: Date.now() - started, request_id: requestId });
       return res;
     } catch (err) {

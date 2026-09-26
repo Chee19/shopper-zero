@@ -101,3 +101,14 @@ export type ScanReport = {
 | 14 | WS5 CCRs 1–11 | Accepted, except CCR-8's `claim_token`, which follows B3. |
 | 15 | Extra migrations | Streams may add their own migrations with later timestamps (e.g. WS4's `20260926024000_ws4_checkout.sql`). They never edit the core migration. |
 | 16 | `/bot` page | WS5 adds `/bot`, which explains the crawler and how to opt out. |
+
+## C. WS1 review changes (implemented; override spec 00/01 text)
+
+| # | Change | Where |
+|---|---|---|
+| C1 | Catalog URL schemas accept only `http(s)` (`z.url({ protocol: /^https?$/ })`) | `contracts/catalog.ts` |
+| C2 | `proxy()` skips the Supabase session refresh when `NEXT_PUBLIC_UI_MOCK=1` or Supabase env is missing, so mock-mode UI pages render | `src/proxy.ts` |
+| C3 | `normalizeStoreUrl` rejects non-default ports (except 8080/8443) unless `allowPrivate` | `src/lib/slug.ts` |
+| C4 | `parsePrice` reads the first price only, ignores abbreviation dots (`Rs.`), rejects negatives and malformed dot groups | `src/lib/money.ts` |
+| C5 | `variantKey` hashes option values that slugify to "" (non-Latin), so variant ids stay stable across crawls | `src/lib/db/upsert-row.ts` |
+| C6 | Stream stubs (`crawl`, `scan`, `checkout`, `mcp/result`) import `server-only` | stubs |

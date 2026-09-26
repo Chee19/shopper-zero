@@ -40,6 +40,8 @@ export interface NormalizedStoreUrl {
  * - Rejects localhost, *.local, *.internal and IP literals unless allowPrivate (ALLOW_PRIVATE_STORE_HOSTS=true).
  * Throws Error("invalid_store_url: ...") on bad input (callers map to AppError validation_error).
  */
+const ALLOWED_PORTS = new Set(["8080", "8443"]); // default ports never appear in URL.port
+
 export function normalizeStoreUrl(raw: string, opts: { allowPrivate?: boolean } = {}): NormalizedStoreUrl {
   const trimmed = raw.trim();
   if (!trimmed) throw new Error("invalid_store_url: empty");
@@ -55,6 +57,9 @@ export function normalizeStoreUrl(raw: string, opts: { allowPrivate?: boolean } 
   if (!host.includes(".") && !opts.allowPrivate) throw new Error(`invalid_store_url: host ${host}`);
   if (!opts.allowPrivate && (BLOCKED_HOST.test(host) || IP_HOST.test(host))) {
     throw new Error(`invalid_store_url: private host ${host}`);
+  }
+  if (u.port && !opts.allowPrivate && !ALLOWED_PORTS.has(u.port)) {
+    throw new Error(`invalid_store_url: port ${u.port}`);
   }
   const first = u.pathname.split("/").filter(Boolean)[0];
   const prefix = first && LOCALE_SEGMENT.test(first) ? `/${first.toLowerCase()}` : "";

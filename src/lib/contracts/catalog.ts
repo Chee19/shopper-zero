@@ -9,7 +9,7 @@ export const OfferSchema = z.object({
   price: MoneySchema,
   compare_at: MoneySchema.nullable(),            // strikethrough / list price
   availability: z.enum(AVAILABILITIES),
-  url: z.url().nullable(),                      // PDP URL with this variant selected
+  url: z.url({ protocol: /^https?$/ }).nullable(),                      // PDP URL with this variant selected
   checked_at: z.iso.datetime({ offset: true }),  // when price/stock was observed
 });
 export type Offer = z.infer<typeof OfferSchema>;
@@ -20,7 +20,7 @@ export const NormalizedVariantSchema = z.object({
   options: z.record(z.string(), z.string()),           // { Size: "M", Color: "Blue" }
   sku: z.string().max(255).nullable(),
   gtin: z.string().max(64).nullable(),
-  image_url: z.url().nullable(),
+  image_url: z.url({ protocol: /^https?$/ }).nullable(),
   inventory_quantity: z.number().int().nullable(),
   offer: OfferSchema,
 });
@@ -28,7 +28,7 @@ export type NormalizedVariant = z.infer<typeof NormalizedVariantSchema>;
 
 export const NormalizedProductSchema = z.object({
   external_id: z.string().min(1).max(255).nullable(), // productGroupID ?? productID ?? sku. Woo: the Woo product id (B9)
-  url: z.url(),                                        // canonical absolute PDP URL on the merchant site
+  url: z.url({ protocol: /^https?$/ }),                                        // canonical absolute PDP URL on the merchant site
   handle: z.string().min(1).max(255),                  // slug.ts handleFromUrl(url) unless the platform gives one
   title: z.string().min(1).max(500),
   description_html: z.string().nullable(),
@@ -37,7 +37,7 @@ export const NormalizedProductSchema = z.object({
   product_type: z.string().max(255).nullable(),
   category: z.string().max(500).nullable(),
   tags: z.array(z.string().max(100)).max(100),
-  images: z.array(z.object({ url: z.url(), alt: z.string().optional() })).max(50), // hotlinked, never re-hosted
+  images: z.array(z.object({ url: z.url({ protocol: /^https?$/ }), alt: z.string().optional() })).max(50), // hotlinked, never re-hosted
   options: z.array(z.object({ name: z.string().min(1), values: z.array(z.string()) })).max(10), // products.json emits the first 3
   variants: z.array(NormalizedVariantSchema).min(1).max(250), // ALWAYS >= 1 (synthesize "Default Title")
   source: z.enum(EXTRACTION_SOURCES),

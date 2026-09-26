@@ -38,6 +38,10 @@ test("buildUpsertRow", () => {
   const mixed = buildUpsertRow({ ...base, variants: [base.variants[0], { ...base.variants[1], offer: { ...offer(1), price: { amount: 1, currency: "EUR" } } }] });
   assert.deepEqual(mixed, { ok: false, url: "https://x.com/p/hoodie", reason: "mixed_currency" });
   assert.equal(variantKey({ ...base.variants[0], options: {}, title: "Default Title" } as never), "default");
+  const red = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "赤" } } as never);
+  const blue = variantKey({ ...base.variants[0], external_id: null, sku: null, options: { color: "青" } } as never);
+  assert.notEqual(red, "opt:");
+  assert.notEqual(red, blue);
   const rows = dedupeHandles([r.row, { ...r.row, url: "https://x.com/other" }, r.row]);
   assert.equal(rows[0].handle, "hoodie");
   assert.match(rows[1].handle, /^hoodie-[0-9a-f]{6}$/);

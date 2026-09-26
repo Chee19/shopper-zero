@@ -28,6 +28,14 @@ test("money", () => {
   assert.equal(parsePrice(19.99, "USD"), 1999);
   assert.equal(parsePrice("Call us", "USD"), null);
   assert.equal(parsePrice(null, "USD"), null);
+  assert.equal(parsePrice("Dhs. 45.00", "USD"), 4500);
+  assert.equal(parsePrice("Rs. 499.00", "USD"), 49900);
+  assert.equal(parsePrice("Rs. 1,299.00", "USD"), 129900);
+  assert.equal(parsePrice("Sale price$25.00Regular price$30.00", "USD"), 2500);
+  assert.equal(parsePrice("-$5.00", "USD"), null);
+  assert.equal(parsePrice("1.299.000", "USD"), 129900000);
+  assert.equal(parsePrice("1.2.3", "USD"), null);
+  assert.throws(() => rescaleMinor("", 2, "USD"));
   assert.equal(rescaleMinor("115", 0, "USD"), 11500);
   assert.equal(rescaleMinor("4500", 2, "USD"), 4500);
   assert.equal(rescaleMinor(4500, 2, "JPY"), 45);

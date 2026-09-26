@@ -58,8 +58,11 @@ function numberToPlain(n: number): string {
 export function parsePrice(raw: unknown, currency: string): number | null {
   if (typeof raw === "number") return Number.isFinite(raw) && raw >= 0 ? toMinor(raw, currency) : null;
   if (typeof raw !== "string") return null;
-  let s = raw.replace(/[^\d.,-]/g, "");
-  if (!/\d/.test(s)) return null;
+  // First price only ("Sale price$25.00Regular price$30.00" -> "$25.00"); negatives are not prices.
+  const m = raw.match(/\d[\d.,]*/);
+  if (!m || /-[^\w\s]*$/.test(raw.slice(0, m.index))) return null; // "-5", "-$5", "$-5"
+  // Drop separators that belong to text, not the number ("Rs. 1,299.00", "45.00.").
+  let s = m[0].replace(/[.,]+$/, "");
   const lastDot = s.lastIndexOf(".");
   const lastComma = s.lastIndexOf(",");
   if (lastDot >= 0 && lastComma >= 0) {
@@ -74,10 +77,13 @@ export function parsePrice(raw: unknown, currency: string): number | null {
   } else if (lastDot >= 0) {
     // Only dots: several dots = thousands separators ("1.299.000").
     const parts = s.split(".");
-    if (parts.length > 2) s = parts.join("");
+    if (parts.length > 2) {
+      if (!parts.slice(1).every((g) => /^\d{3}$/.test(g))) return null;
+      s = parts.join("");
+    }
   }
   try {
-    const v = toMinor(s.replace(/^-/, ""), currency);
+    const v = toMinor(s, currency);
     return v;
   } catch {
     return null;
@@ -86,7 +92,7 @@ export function parsePrice(raw: unknown, currency: string): number | null {
 
 /** Re-scales an integer minor amount from a source exponent (e.g. Woo currency_minor_unit) to the currency's exponent. */
 export function rescaleMinor(amount: number | string, fromExponent: number, currency: string): number {
-  const n = typeof amount === "string" ? Number(amount) : amount;
+  const n = typeof amount === "string" ? (amount.trim() === "" ? NaN : Number(amount)) : amount;
   if (!Number.isFinite(n)) throw new Error(`rescaleMinor: bad amount ${amount}`);
   const diff = currencyExponent(currency) - fromExponent;
   return diff >= 0 ? Math.round(n * 10 ** diff) : Math.round(n / 10 ** -diff);

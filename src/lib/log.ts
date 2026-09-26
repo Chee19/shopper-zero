@@ -6,7 +6,8 @@ type Fields = Record<string, unknown>;
 const REDACT = /token|secret|password|authorization|cookie|private_?key|signature|email|phone|address|line1|postal|cart_token/i;
 
 function redact(value: unknown, depth = 0): unknown {
-  if (depth > 4 || value === null || typeof value !== "object") return value;
+  if (value === null || typeof value !== "object") return value;
+  if (depth > 4) return "[truncated]";
   if (Array.isArray(value)) return value.slice(0, 20).map((v) => redact(v, depth + 1));
   const out: Fields = {};
   for (const [k, v] of Object.entries(value as Fields)) {
@@ -17,7 +18,7 @@ function redact(value: unknown, depth = 0): unknown {
 
 function emit(level: Level, event: string, fields?: Fields) {
   if (level === "debug" && process.env.LOG_LEVEL !== "debug") return;
-  const line = JSON.stringify({ level, ts: new Date().toISOString(), event, ...(redact(fields ?? {}) as Fields) });
+  const line = JSON.stringify({ ...(redact(fields ?? {}) as Fields), level, ts: new Date().toISOString(), event });
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);
   else console.log(line);

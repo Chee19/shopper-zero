@@ -1,4 +1,5 @@
 // src/lib/mcp/result.ts  (WS1 creates at T+30; WS3 owns)
+import "server-only";
 import type { ToolResult } from "@/lib/contracts";
 import { toAppError } from "@/lib/errors";
 import { log } from "@/lib/log";

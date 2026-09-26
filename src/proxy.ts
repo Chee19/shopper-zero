@@ -1,7 +1,15 @@
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
+  // Mock mode (WS5) and envs without Supabase must still render UI pages.
+  if (
+    process.env.NEXT_PUBLIC_UI_MOCK === "1" ||
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  ) {
+    return NextResponse.next({ request });
+  }
   return updateSession(request);
 }
 
