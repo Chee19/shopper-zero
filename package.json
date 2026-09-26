@@ -17,7 +17,7 @@
     "db:start": "supabase start",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
-    "db:types": "supabase gen types typescript --local > src/lib/db/types.gen.ts",
+    "db:types": "supabase gen types typescript --db-url postgresql://postgres:postgres@127.0.0.1:54322/postgres > src/lib/db/types.gen.ts",
     "db:types:remote": "supabase gen types typescript --linked > src/lib/db/types.gen.ts",
     "db:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/db-smoke.ts",
     "demo:before": "STORE_MODE=before PORT=4001 node demo-stores/provence/server.mjs",
