@@ -15,6 +15,10 @@ Open http://127.0.0.1:4174/demo/checkout. Select a product, size and quantity; c
 
 The resulting `LDP…` order appears at http://127.0.0.1:4002/__demo/orders and through the merchant receipt link. ShopperZero's receipt, payment reference and merchant record identify the same purchase. `demo:agent` discovers the variant through MCP, confirms it, repeats confirmation, and saves evidence under `artifacts/mock-checkout`.
 
+## Judge rehearsal
+
+The [Lumière script](../demo/script.md), [stage runbook](../demo/runbook.md) and [Q&A](../demo/qa.md) describe the current simulated purchase. Run `npm run demo:rehearse` for two timed browser/MCP journeys with recordings. Use `-- --quick --runs=1` to check the same path without presentation pauses, or `-- --headed --runs=1` to narrate a visible run. Evidence is saved under the ignored `artifacts/mock-checkout/judge-rehearsals` directory.
+
 ## Data and configuration
 
 - `.mock-checkout/ledger.json`: checkout sessions, events, idempotency keys and simulated payment records.

@@ -26,7 +26,8 @@
     "test:browser": "node scripts/test.mjs browser",
     "demo:original": "node scripts/demo/serve-original.mjs",
     "demo:grok": "npm --prefix demos/prototypes/grok run dev -- --host 127.0.0.1 --port 4175",
-    "demo:provence": "node scripts/demo/run.mjs"
+    "demo:provence": "node scripts/demo/run.mjs",
+    "demo:rehearse": "tsx scripts/demo/rehearse.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
