@@ -4,7 +4,7 @@ Read them in this order. **`DECISIONS.md` is binding: where any spec disagrees w
 
 | # | File | What it covers |
 |---|---|---|
-| 0 | [TEAM-SPLIT.md](TEAM-SPLIT.md) | Who owns what (Allen: WS1 → WS3 → WS5; Pierre: WS4 → WS2), sync points, cut order |
+| 0 | [TEAM-SPLIT.md](TEAM-SPLIT.md) | Who owns what (Allen: WS1 → WS3 → WS5; Pierre: WS4; Chee19: WS2), hand-offs, sync points, cut order |
 | 1 | [DECISIONS.md](DECISIONS.md) | Round-2 binding decisions: the scan-and-score feature (the `api` → `dom` → `computer_use` cascade, `ScanReport`, `scans`) and how conflicts B1–B16 between the specs were resolved |
 | 2 | [00-overview-and-contracts.md](00-overview-and-contracts.md) | Product, 2-minute demo, repo layout and ownership, conventions, env vars, canonical TypeScript contracts, MCP tool table, db helper signatures, milestones |
 | 3 | [01-foundation.md](01-foundation.md) | WS1: package install, core migration SQL (incl. `scans` and the `scan-screenshots` bucket), seed, db helpers, shared helpers, `.env.example` |
