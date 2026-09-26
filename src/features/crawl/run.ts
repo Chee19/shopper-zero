@@ -2,14 +2,13 @@ import "server-only";
 import type { CrawlRun, ExtractionSource, NormalizedProduct, Store } from "@/contracts";
 import { EXTRACTION_SOURCES } from "@/contracts";
 import {
-  claimCrawlRun, getCrawlRun, getIndexStats, getStoreById, setStoreReadiness, updateCrawlRun, updateStore, upsertScan,
+  claimCrawlRun, collisionHandle, getCrawlRun, getIndexStats, getStoreById, setStoreReadiness, updateCrawlRun, updateStore, upsertScan,
   upsertStoreProducts,
   type CrawlRunPatch,
 } from "@/infrastructure/database";
 import { flags, optionalEnv } from "@/shared/env";
 import { log } from "@/shared/log";
 import { computeReadiness } from "@/features/readiness";
-import { shortHash } from "@/shared/slug";
 import { resolveCheckoutConnector } from "./checkout-connector";
 import {
   runPipeline, strategyLabel, type PipelineHooks, type PipelineInput, type PipelineResult, type PreferredStrategy,
@@ -170,9 +169,10 @@ async function upsertWithRetry(c: Crawl, batch: NormalizedProduct[]): Promise<Up
   const r = await upsertStoreProducts(c.store.id, batch, { seenAt: c.seenAt });
   const collided = new Set(r.failed.filter((f) => HANDLE_COLLISION.test(f.error)).map((f) => f.url));
   if (!collided.size) return r;
-  // 246 keeps "-" plus the 8-char hash within the 255-char handle limit.
+  // Same deterministic suffix as the in-batch dedupe (DECISIONS C10), so re-crawls land on the same row.
+  // 248 keeps "-" plus the 6-char hash within the 255-char handle limit.
   const again = batch.filter((p) => collided.has(p.url))
-    .map((p) => ({ ...p, handle: `${p.handle.slice(0, 246)}-${shortHash(p.url)}` }));
+    .map((p) => ({ ...p, handle: collisionHandle(p.handle.slice(0, 248), p.url) }));
   const r2 = await upsertStoreProducts(c.store.id, again, { seenAt: c.seenAt }).catch((err) => emptyUpsert(again, err));
   return {
     upserted: r.upserted + r2.upserted,
