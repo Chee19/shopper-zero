@@ -19,7 +19,10 @@
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --local > src/lib/db/types.gen.ts",
     "db:types:remote": "supabase gen types typescript --linked > src/lib/db/types.gen.ts",
-    "db:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/db-smoke.ts"
+    "db:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/db-smoke.ts",
+    "demo:before": "STORE_MODE=before PORT=4001 node demo-stores/provence/server.mjs",
+    "demo:after": "STORE_MODE=after PORT=4002 node demo-stores/provence/server.mjs",
+    "demo:stores": "node demo-stores/provence/run-both.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
