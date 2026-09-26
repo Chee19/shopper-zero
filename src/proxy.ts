@@ -6,8 +6,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Skip static assets and the public agent-facing API (stateless, no session).
+  // Refresh the Supabase session only for human UI pages. Skipped: static assets, every API
+  // route (api/*), per-store agent outputs (s/*) and root discovery files; none use cookies.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/agent|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/|s/|\\.well-known/|llms\\.txt|robots\\.txt|openapi\\.json|sitemap\\.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

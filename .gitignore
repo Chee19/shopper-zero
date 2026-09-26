@@ -46,3 +46,6 @@ next-env.d.ts
 # supabase local
 supabase/.branches
 supabase/.temp
+
+# woo demo store secrets
+infra/woo/.env.woo
