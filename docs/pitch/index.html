@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Shopper Zero — Hackathon pitch</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="deck.js" defer></script>
+  </head>
+  <body>
+    <main id="deck" aria-label="Shopper Zero hackathon presentation">
+      <section class="slide cover" aria-labelledby="title-1">
+        <div class="brand">
+          <img
+            src="../../.github/logo.svg"
+            alt=""
+            width="44"
+            height="44"
+          /><span>Shopper Zero</span>
+        </div>
+        <p class="eyebrow">Hackathon prototype / September 2026</p>
+        <h1 id="title-1">
+          Your next customer<br />could be <em>an agent.</em>
+        </h1>
+        <p class="lead">
+          Can an AI shopping assistant actually buy from your store?
+        </p>
+        <div class="cover-bottom">
+          <span>A readiness test for AI shopping.</span
+          ><span>Allen / Pierre / Chee19</span>
+        </div>
+        <aside class="notes">
+          Opening, 10 seconds. An agent is an AI assistant acting for a shopper.
+          Shopper Zero asks whether that assistant can complete a shopping
+          journey on an existing store. Introduce the product as a readiness
+          test that shows merchants what breaks. The root README calls Shopper
+          Zero Lighthouse for agentic checkout. Team names follow the team
+          split. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide" aria-labelledby="title-2">
+        <p class="eyebrow">The problem</p>
+        <h2 id="title-2">
+          A storefront is built<br />for <em>human eyes.</em>
+        </h2>
+        <div class="comparison">
+          <div>
+            <h3>A shopper sees</h3>
+            <p>A product page.<br />A price. An add-to-cart button.</p>
+          </div>
+          <div>
+            <h3>An agent needs</h3>
+            <p>
+              Structured products.<br />Current offers. A checkout interface.
+            </p>
+          </div>
+        </div>
+        <p class="bottom-line">
+          A store without that interface leaves the agent to interpret the page.
+        </p>
+        <aside class="notes">
+          Problem, 10 seconds. A product page can work for people while an
+          assistant struggles with product data, a variant selector, or a bot
+          challenge. This is the project’s problem framing, not a claim about
+          every store or a quantified loss of sales. Explain that API simply
+          means a direct software interface. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide blue" aria-labelledby="title-3">
+        <p class="eyebrow">The product / Lighthouse for agentic checkout</p>
+        <h2 id="title-3">
+          See where agents<br />get stuck.<br /><em>Know what to fix.</em>
+        </h2>
+        <p class="lead">
+          Test a shopping journey.<br />Show the blocker. Fix it. Test again.
+        </p>
+        <p class="bottom-line">
+          Designed to give merchants a score, evidence and prioritised fixes.
+        </p>
+        <aside class="notes">
+          Solution, 15 seconds. Lighthouse is a familiar analogy for technical
+          judges: a diagnostic report with actionable issues. For everyone else,
+          explain the same idea as a check-up for an AI shopping journey. We
+          want to show the failing step, rank the fixes, and rerun the journey
+          after changes. The complete scanning and report workflow remains in
+          progress. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide" aria-labelledby="title-4">
+        <p class="eyebrow">01 / Diagnose access</p>
+        <h2 id="title-4">How can an agent<br /><em>use this store?</em></h2>
+        <ol class="steps">
+          <li>
+            <span class="step-number">01</span>
+            <div>
+              <h3>Direct data access <small>API</small></h3>
+              <p>Look for a catalog the agent can query directly.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">02</span>
+            <div>
+              <h3>Page structure <small>DOM + JSON-LD</small></h3>
+              <p>Read product data and identify page interactions.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">03</span>
+            <div>
+              <h3>Computer use</h3>
+              <p>Inspect screenshots when the earlier methods fail.</p>
+            </div>
+          </li>
+        </ol>
+        <p class="bottom-line">
+          Planned scan: stop at the first working method and report its
+          capabilities.
+        </p>
+        <aside class="notes">
+          Scanning, 10 seconds. The planned cascade tries direct store
+          interfaces, structured page data, then browser interaction. DOM means
+          the page structure. JSON-LD means structured data embedded in a page.
+          Tests track what the agent can do, including product discovery and
+          variant selection. Live-store browser probes stop before payment. The
+          local controlled checkout demo tests order completion separately.
+          Sources: origin/main at b463fe8c5cf0567f4e9a413973d894b0f5f16097,
+          README.md, docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide catalog" aria-labelledby="title-5">
+        <p class="eyebrow">02 / Explain the blocker</p>
+        <h2 id="title-5">
+          A score is useful.<br /><em>The evidence matters.</em>
+        </h2>
+        <div class="catalog-body">
+          <p class="lead">
+            A merchant should see exactly<br />where the journey needs help.
+          </p>
+          <dl class="interfaces">
+            <div>
+              <dt>A readiness score</dt>
+              <dd>Planned: 0–100 score and A–F grade</dd>
+            </div>
+            <div>
+              <dt>The step that failed</dt>
+              <dd>For example: wrong size added to the cart</dd>
+            </div>
+            <div>
+              <dt>A specific fix to test</dt>
+              <dd>Correct variant selection, then rerun the journey</dd>
+            </div>
+          </dl>
+        </div>
+        <p class="bottom-line">
+          Illustrative report content. The complete scanner and reporting
+          experience are in progress.
+        </p>
+        <aside class="notes">
+          Report, 10 seconds. The intended report combines a score with evidence
+          and a ranked recommendation. The wrong-size example is illustrative
+          report content grounded in the local before-store variant bug
+          documented in the checkout guide. Do not display a fabricated score as
+          an observed result. A readiness grade cannot substitute for proof of
+          order completion. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide dark" aria-labelledby="title-6">
+        <p class="eyebrow">03 / Verify the improvement</p>
+        <h2 id="title-6">
+          Finding the product<br />is only <em>the first step.</em>
+        </h2>
+        <div class="comparison checkout">
+          <div>
+            <h3>Discovery fix</h3>
+            <p>Expose readable products<br />with the right price and size.</p>
+            <small>Technical path: catalog API or feed</small>
+          </div>
+          <div>
+            <h3>Checkout fix</h3>
+            <p>
+              Connect the purchase flow<br />and confirm the merchant order.
+            </p>
+            <small>Technical path: checkout connector</small>
+          </div>
+        </div>
+        <p class="bottom-line">
+          A human handoff means the agent still needs help. A feed alone does
+          not prove a purchase.
+        </p>
+        <aside class="notes">
+          Fixes, 10 seconds. Readable catalog data addresses discovery. A
+          checkout connector can support order creation. Those are supporting
+          components of the diagnostic product. A human handoff remains an
+          incomplete autonomous journey, and publishing an endpoint does not
+          guarantee that every agent will discover or use it. Sources:
+          origin/main at b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide demo" aria-labelledby="title-7">
+        <p class="eyebrow">The demo / Lumière de Provence</p>
+        <h2 id="title-7">“Buy the hand cream.<br /><em>The 75 ml one.</em>”</h2>
+        <ol class="demo-sequence">
+          <li><span>01</span>Show the before / after store</li>
+          <li><span>02</span>Select the exact size</li>
+          <li><span>03</span>Confirm a simulated payment</li>
+          <li><span>04</span>Match the receipt to the store order</li>
+        </ol>
+        <p class="bottom-line">
+          Local demonstration. Simulated payments. No real card charge.
+        </p>
+        <aside class="notes">
+          Demo, 60 seconds. On a checkout of current main, rehearse npm run
+          demo:provence and npm run demo:agent. Show Lumière before and after on
+          ports 4001 and 4002. The before-store blocks declared shopping agents
+          and retains a variant bug. The after-store supports the local
+          demonstration. Show the exact 75 ml Shea Butter Hand Cream SKU,
+          shipping, simulated confirmation, and matching receipt and merchant
+          order. The guide lists 24 dollars plus 6.95 shipping and 1.98 tax,
+          totaling 32.93 dollars, but use the actual displayed quote. Skip setup
+          on stage. Label a replay if using recorded evidence. Sources:
+          origin/main at b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide status" aria-labelledby="title-8">
+        <p class="eyebrow">Prototype status / 26 September 2026</p>
+        <h2 id="title-8">
+          A purchase demo today.<br /><em>A full diagnosis next.</em>
+        </h2>
+        <div class="comparison">
+          <div>
+            <h3>Local checkout demo</h3>
+            <p>
+              Before / after storefronts<br />Product size and shipping
+              selection<br />Simulated checkout through agent tools<br />Matching
+              receipts and merchant orders
+            </p>
+          </div>
+          <div>
+            <h3>Still in progress</h3>
+            <p>
+              Complete live-store scanning<br />Readiness scoring and reports<br />Ranked
+              blockers with evidence<br />Merchant fixes and retesting workflow
+            </p>
+          </div>
+        </div>
+        <p class="bottom-line">
+          Current demo evidence supports the checkout flow, not a complete
+          live-store readiness assessment.
+        </p>
+        <aside class="notes">
+          Status, 10 seconds. Current main documents a working local
+          before-and-after storefront and checkout demonstration with simulated
+          payments, agent tools, receipts, and retry/failure tests. Its README
+          also explicitly says live-store scanning, scoring, and reports are
+          unfinished. Do not claim production readiness or live payment
+          integration. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide" aria-labelledby="title-9">
+        <p class="eyebrow">Next step / proposed pilot</p>
+        <h2 id="title-9">
+          A pilot built around<br /><em>one blocked journey</em>
+        </h2>
+        <div class="pilot-body">
+          <p class="lead">
+            Merchants whose agent shopping<br />journeys have a demonstrated
+            blocker.
+          </p>
+          <div class="pilot-details">
+            <h3>What we need to prove</h3>
+            <p>
+              Can we reproduce the failure?<br />Can we explain the right
+              fix?<br />Does the same journey improve?
+            </p>
+          </div>
+        </div>
+        <p class="bottom-line">
+          Proposed pilot: diagnose one merchant journey, fix the blocker, and
+          retest.
+        </p>
+        <aside class="notes">
+          Next step, 10 seconds. The proposed pilot begins with a merchant
+          journey that has an observed blocker. Reproduce it, explain a concrete
+          fix, then retest. A store’s platform alone does not prove that an
+          agent is blocked. We do not claim merchant partnerships, measured
+          revenue, or verified market size. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide closing" aria-labelledby="title-10">
+        <p class="eyebrow">Shopper Zero</p>
+        <h2 id="title-10">Can an agent<br />buy from <em>your store?</em></h2>
+        <p class="lead">Shopper Zero shows where the journey breaks.</p>
+        <p class="closing-team">
+          Next: merchant pilots with a repeatable before / after test.
+        </p>
+        <aside class="notes">
+          Close, 10 seconds. Return to the question: can an agent buy from your
+          store? Our next step is merchant pilots with a repeatable
+          before-and-after test. Invite questions. The following two slides are
+          optional technical Q&A, outside the three-minute pitch. Sources:
+          origin/main at b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide architecture" aria-labelledby="title-11">
+        <p class="eyebrow">Technical appendix / target architecture</p>
+        <h2 id="title-11">
+          The test follows<br /><em>the shopping journey.</em>
+        </h2>
+        <ol class="architecture-layers">
+          <li>
+            <strong>Access probes</strong
+            ><span>API, page structure, then browser interaction</span>
+          </li>
+          <li>
+            <strong>Evidence and score</strong
+            ><span>Capabilities, failed steps and recommendations</span>
+          </li>
+          <li>
+            <strong>Supporting interfaces</strong
+            ><span>Shared catalog schemas, MCP tools and REST routes</span>
+          </li>
+          <li>
+            <strong>Controlled checkout</strong
+            ><span>Local storefront connector and simulated payment</span>
+          </li>
+        </ol>
+        <p class="bottom-line">
+          Next.js services. Planned Supabase persistence. The local demo uses
+          file-backed state.
+        </p>
+        <aside class="notes">
+          Optional technical Q&A. The target architecture separates access
+          probes, scoring and recommendations, shared catalog contracts, and
+          controlled checkout. Main organizes code under src/features,
+          src/contracts, src/infrastructure, and src/shared. The documented
+          local demo uses file-backed state, REST routes, and MCP tools rather
+          than requiring Supabase or live vendor credentials. MCP is Model
+          Context Protocol. REST is the HTTP interface. The complete live
+          scanner and score report remain planned. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+
+      <section class="slide reliability" aria-labelledby="title-12">
+        <p class="eyebrow">Technical appendix / design decisions</p>
+        <h2 id="title-12">
+          Reliable data.<br /><em>Explicit failure paths.</em>
+        </h2>
+        <dl class="reliability-list">
+          <div>
+            <dt>Consistent prices</dt>
+            <dd>
+              Integer minor units and a currency code.<br />Changed prices
+              require fresh confirmation.
+            </dd>
+          </div>
+          <div>
+            <dt>Safe retries</dt>
+            <dd>
+              Idempotency keys identify repeated requests.<br />After timeouts,
+              reconcile before another purchase.
+            </dd>
+          </div>
+          <div>
+            <dt>Honest handoffs</dt>
+            <dd>
+              Unsupported checkout returns requires_escalation.<br />The report
+              must distinguish handoff from success.
+            </dd>
+          </div>
+        </dl>
+        <p class="bottom-line">
+          The checkout guide documents retry and failure scenarios. Payments
+          remain simulated.
+        </p>
+        <aside class="notes">
+          Optional technical Q&A. The current checkout guide describes
+          integer-cent prices, a changed-price confirmation flow, persistent
+          authorization state before order placement, and timeout reconciliation
+          against the merchant record. Capture failure cancels the merchant
+          order and releases authorization. Integration scenarios include
+          idempotency, lost responses, cancellation, and restart behavior.
+          Sessions explicitly indicate simulated payments. UCP-shaped sessions
+          do not assert full protocol conformance. Sources: origin/main at
+          b463fe8c5cf0567f4e9a413973d894b0f5f16097, README.md,
+          docs/specs/DECISIONS.md, docs/guides/checkout.md and
+          docs/specs/TEAM-SPLIT.md. See docs/pitch/README.md for pinned source
+          links.
+        </aside>
+      </section>
+    </main>
+
+    <nav class="controls" aria-label="Presentation controls">
+      <button id="previous" type="button" aria-label="Previous slide">
+        Previous
+      </button>
+      <output id="counter" aria-live="polite" aria-atomic="true">1 / 12</output>
+      <button id="next" type="button" aria-label="Next slide">Next</button>
+      <span class="control-divider"></span>
+      <button id="notes-toggle" type="button" aria-pressed="false">
+        Notes
+      </button>
+      <button id="fullscreen" type="button">Fullscreen</button>
+      <button id="print" type="button">Print</button>
+    </nav>
+    <aside id="speaker-panel" aria-label="Speaker notes" hidden>
+      <div class="notes-heading">
+        <strong>Speaker notes</strong
+        ><button
+          id="notes-close"
+          type="button"
+          aria-label="Close speaker notes"
+        >
+          Close
+        </button>
+      </div>
+      <p id="speaker-text"></p>
+    </aside>
+    <noscript
+      ><p class="noscript">
+        All slides appear below. Use your browser’s print command to export
+        them.
+      </p></noscript
+    >
+  </body>
+</html>
