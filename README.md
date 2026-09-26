@@ -39,6 +39,12 @@ supabase/
   migrations/          SQL migrations — add new ones with `supabase migration new <name>`
 ```
 
+## Deployment
+
+Every push to `main` runs `.github/workflows/deploy.yml`: Supabase migrations are applied first, then the app is deployed to Vercel production (https://shopper-zero.vercel.app).
+
+Required repo secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `VERCEL_TOKEN`.
+
 ## Database changes
 
 Create a migration with `supabase migration new <name>`, then `supabase db reset` to reapply locally. Don't edit migrations that are already on `main`.
