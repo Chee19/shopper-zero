@@ -5,7 +5,7 @@ import { appUrl } from "@/lib/env";
 import { buildUcpProfile } from "@/lib/formats/ucp";
 import { json, preflight, route } from "@/lib/http";
 
-// Root UCP profile. Checkout is claimed only once CHECKOUT_TOOLS_LIVE is flipped (spec 03 §6.6).
+// Root UCP profile. Checkout is claimed only when checkoutLive() (tools live + a payment rail; spec 03 §6.6).
 export const GET = route("ucp.root", async (req, _ctx: unknown, { requestId }) => {
   const base = appUrl();
   logHit("ucp", { tool: "root", req });

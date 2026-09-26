@@ -126,7 +126,7 @@ export function renderStoreLlmsTxt({ base, store, products, agentCheckout, scan 
   const productLines = listed.map((p) => {
     const { min, max } = p.price_range;
     const range = max.amount > min.amount ? `${formatMoney(min)}–${formatMoney(max)}` : formatMoney(min);
-    return `- [${mdInline(p.title)}](${base}/s/${s.slug}/products/${p.handle}.json): ${range} · ${p.available ? "in stock" : "out of stock"}`;
+    return `- [${mdInline(p.title) || p.handle}](${base}/s/${s.slug}/products/${p.handle}.json): ${range} · ${p.available ? "in stock" : "out of stock"}`;
   });
   if (s.product_count > STORE_LLMS_PRODUCTS) {
     productLines.push(`- Full list: [${s.product_count} products](${base}/s/${s.slug}/products.json?limit=250)`);

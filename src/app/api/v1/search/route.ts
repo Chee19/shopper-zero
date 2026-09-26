@@ -24,7 +24,7 @@ const QuerySchema = z.object({
   store: z.string().trim().max(255).optional(),
   min: unsetIfBlank(z.coerce.number().int().min(0)),
   max: unsetIfBlank(z.coerce.number().int().min(0)),
-  available: unsetIfBlank(z.enum(["true", "false", "any"])),
+  available: unsetIfBlank(z.string().trim().pipe(z.enum(["true", "false", "any"]))),
   brand: list,
   category: list,
   currency: unsetIfBlank(z.string().trim().length(3).toUpperCase()),

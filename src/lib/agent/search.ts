@@ -84,8 +84,9 @@ export async function catalogSearch(catalog: CatalogSearchInput, opts: { default
 }
 
 export function searchSummary(body: Awaited<ReturnType<typeof catalogSearch>>["body"], catalog: CatalogSearchInput, store: Store | null) {
-  const where = store ? ` in ${plainInline(store.name || store.domain, 80)}` : "";
-  const q = catalog.query ? ` for "${plainInline(catalog.query, 80)}"` : "";
+  const where = store ? ` in ${plainInline(store.name ?? "", 80) || plainInline(store.domain, 80)}` : "";
+  const query = plainInline(catalog.query ?? "", 80);
+  const q = query ? ` for "${query}"` : "";
   const more = body.pagination.has_next_page ? ", more available" : "";
   return `Found ${body.pagination.total_count} products${where}${q}; showing ${body.products.length}${more}.`;
 }

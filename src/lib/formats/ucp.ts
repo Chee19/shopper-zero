@@ -202,7 +202,7 @@ export interface BuildUcpProfileOptions {
   /** Per-store profile when set (endpoint gets ?store=, supported_versions = {}). */
   store?: { slug: string };
   version?: string;
-  /** Checkout is claimed only when this is set (CHECKOUT_TOOLS_LIVE and, per store, agentCheckoutFor). */
+  /** Checkout is claimed only when this is set (checkoutLive() and, per store, agentCheckoutFor). */
   checkout?: ProfileCheckout | null;
 }
 
