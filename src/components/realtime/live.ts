@@ -24,6 +24,8 @@ export type LiveFeedOptions = {
   watchdogMs?: number;
   connectTimeoutMs?: number;
   lingerMs?: number;
+  /** Also reconcile every N ms while not terminal, even when Realtime is live (sources that never hit Supabase). */
+  pollWhileOpenMs?: number;
 };
 
 export type LiveFeed = { stop: () => void; terminalReached: () => void };
@@ -89,6 +91,12 @@ export function startLiveFeed(o: LiveFeedOptions): LiveFeed {
     timers.push(setTimeout(startPolling, 0));
   }
 
+  const openPoll = o.pollWhileOpenMs
+    ? setInterval(() => {
+        if (!stopped && !pollTimer && !o.isTerminal()) reconcile();
+      }, o.pollWhileOpenMs)
+    : null;
+
   const watchdog = setInterval(() => {
     if (stopped || o.isTerminal() || pollTimer) return;
     if (Date.now() - lastEvent > watchdogMs) {
@@ -102,6 +110,7 @@ export function startLiveFeed(o: LiveFeedOptions): LiveFeed {
     stopped = true;
     stopPolling();
     clearInterval(watchdog);
+    if (openPoll) clearInterval(openPoll);
     timers.forEach(clearTimeout);
     if (lingerTimer) clearTimeout(lingerTimer);
     if (sb && channel) void sb.removeChannel(channel);

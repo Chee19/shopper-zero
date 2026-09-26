@@ -133,6 +133,8 @@ export function useCheckoutFeed(opts: {
       },
       onMode: setMode,
       watchdogMs: follow ? 10_000 : 8000,
+      // WS4's file-backed mock checkout writes events only behind its REST route, never to Supabase: poll while open.
+      pollWhileOpenMs: follow ? undefined : 1500,
     });
     return () => feed?.stop();
   }, [replay, follow, target]);
