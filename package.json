@@ -6,15 +6,41 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "tsx --test src/lib/foundation.test.ts src/lib/db/upsert-row.test.ts",
+    "test:unit": "tsx --test 'src/lib/**/__tests__/*.test.ts'",
+    "crawl:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/crawl-smoke.ts",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset",
+    "db:push": "supabase db push",
+    "db:types": "supabase gen types typescript --local > src/lib/db/types.gen.ts",
+    "db:types:remote": "supabase gen types typescript --linked > src/lib/db/types.gen.ts",
+    "db:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/db-smoke.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "@browserbasehq/sdk": "2.21.0",
+    "@modelcontextprotocol/server": "2.1.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
+    "@x402/core": "2.27.0",
+    "@x402/evm": "2.27.0",
+    "@x402/fetch": "2.27.0",
+    "@x402/next": "2.27.0",
+    "cheerio": "1.2.0",
+    "fast-xml-parser": "5.11.1",
+    "mcp-handler": "2.2.0",
     "next": "16.3.6",
+    "p-queue": "9.3.3",
+    "playwright-core": "1.63.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "^0.0.1"
+    "robots-parser": "3.0.1",
+    "server-only": "^0.0.1",
+    "stripe": "22.6.2",
+    "viem": "2.56.9",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -23,7 +49,9 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "playwright": "1.63.0",
     "tailwindcss": "^4",
+    "tsx": "4.23.15",
     "typescript": "^5"
   }
 }
