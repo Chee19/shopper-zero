@@ -77,7 +77,7 @@ export function productSummary(body: ProductDetail["body"]): string {
   const store = p._shoperzero.store;
   const v = body.verification;
   const verified = v ? (v.ok ? "; verified live" : "; live check incomplete") : "";
-  return `${plainInline(p.title)} (${plainInline(store.name || store.domain, 80)}): ${p.variants.length} variants${verified}.`;
+  return `${plainInline(p.title)} (${plainInline(store.name ?? "", 80) || plainInline(store.domain, 80)}): ${p.variants.length} variants${verified}.`;
 }
 
 /** lookup_catalog (spec 03 §4.2). */
