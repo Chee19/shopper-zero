@@ -55,7 +55,7 @@ export function MetricsStrip({ metrics }: { metrics: UiMetrics | null }) {
       <Tile label="Time to agent-ready" sub="median, CTA → live products.json">
         {metrics.median_seconds_to_ready != null ? elapsed(metrics.median_seconds_to_ready * 1000) : "—"}
       </Tile>
-      <Tile label="Agent checkouts" sub={`Stripe ${rails.stripe_spt ?? 0} · x402 ${rails.x402 ?? 0}`}>
+      <Tile label="Agent checkouts" sub={`Stripe test ${rails.stripe_spt ?? 0}`}>
         {metrics.orders.toLocaleString("en-US")}
       </Tile>
     </div>

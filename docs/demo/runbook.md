@@ -1,6 +1,8 @@
 # Demo runbook
 
-Source: spec 05 §10.1, §10.3, §10.4. Replay routes that always work: `/scan/replay-{api,dom,cu,none}`, `/checkouts/live?replay={spt,x402,handoff}` (always labeled "Replay").
+Source: spec 05 §10.1, §10.3, §10.4. Replay routes that always work: `/scan/replay-{api,dom,cu,none}`, `/checkouts/live?replay={spt,handoff}` (always labeled "Replay").
+
+> **While WS4 runs the file-backed mock checkout** (`npm run dev:mock`), checkout events are not in Supabase, so `/checkouts/live` cannot discover a new checkout on its own. Open the `timeline_url` from the checkout (Claude prints "Watch checkout: …/checkouts/{id}"); that page polls `GET /api/v1/checkouts/{id}/events`.
 
 Backup video link (cloud drive): _fill in after the second clean rehearsal_
 
@@ -27,8 +29,6 @@ Backup video link (cloud drive): _fill in after the second clean rehearsal_
 
 **Payments (T-30)**
 - [ ] The Stripe test mode SPT spike passes. If WS4 fell back, say "SPT-compatible PaymentIntent".
-- [ ] **Wallets funded:** the demo wallet holds Base Sepolia USDC (faucet.circle.com, at least $5) and about 0.01 Base Sepolia ETH as a gas buffer (**UNVERIFIED** whether it is needed).
-- [ ] One x402 purchase is done and its BaseScan link opens.
 
 **Agent (T-20)**
 - [ ] **Claude Desktop MCP configured:** "ShoperZero" → `{APP}/api/mcp` and "ShoperZero Demo Wallet" → `{APP}/api/demo-wallet/mcp`. Disable other connectors and web search.
@@ -57,7 +57,7 @@ Backup video link (cloud drive): _fill in after the second clean rehearsal_
 | The CTA errors, or indexing fails | Open the pre-indexed store page of the second candidate, or `/stores/shoperzero-demo`. |
 | The computer-use tab is broken | Use `/scan/replay-cu`: offline SVG screenshots, labeled Replay. |
 | Claude stalls or picks wrong | Follow up with "Buy the Hoodie from ShoperZero Demo, size M." Otherwise use the WS4 agent script, then `/checkouts/live?replay=spt`. |
-| Stripe fails | Say "pay with x402" and retry; otherwise use the replay. |
+| Stripe fails | Use the explicitly labelled Stripe test fallback; if unavailable, show a clearly labelled recorded replay. |
 | Woo tunnel down | Open the rehearsal `/checkouts/{id}` plus a screenshot of the Woo order. |
 | Network gone | Play the backup video from the matching timestamp and narrate live. |
 

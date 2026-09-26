@@ -1,4 +1,4 @@
-import type { CheckoutEventData, Money, ReadinessGrade } from "./contracts";
+import type { Money, ReadinessGrade } from "./contracts";
 
 export type Tone = "good" | "good2" | "warn" | "serious" | "bad" | "accent" | "muted";
 
@@ -102,13 +102,6 @@ export function domainOf(url: string | null | undefined): string {
 /** UNVERIFIED for sandboxes; the id is always shown with copy. */
 export function stripeUrl(pi: string): string {
   return `https://dashboard.stripe.com/test/payments/${pi}`;
-}
-
-export function explorerUrl(data: CheckoutEventData & { explorer_url?: string }): string | null {
-  if (data.explorer_url) return data.explorer_url;
-  if (!data.tx_hash) return null;
-  if (data.network === "eip155:8453") return `https://basescan.org/tx/${data.tx_hash}`;
-  return `https://sepolia.basescan.org/tx/${data.tx_hash}`;
 }
 
 export function truncateMiddle(s: string, head = 6, tail = 4): string {

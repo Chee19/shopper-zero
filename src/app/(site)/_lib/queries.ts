@@ -151,7 +151,7 @@ export async function getCheckoutView(id: string): Promise<{ checkout: CheckoutS
   } catch {
     checkout = null;
   }
-  const events = await db.listCheckoutEvents(id).catch(() => []);
+  const events = await svc.listCheckoutEvents(id).catch(() => db.listCheckoutEvents(id)).catch(() => []);
   return { checkout, events };
 }
 

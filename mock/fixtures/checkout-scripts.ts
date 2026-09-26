@@ -1,4 +1,4 @@
-// Checkout timeline replays: spt, x402, handoff (spec 05 §9.2). Event data uses the CCR-5 keys only.
+// Checkout timeline replays: spt, handoff (Stripe test payments only: DECISIONS MVP scope) (spec 05 §9.2). Event data uses the CCR-5 keys only.
 import type {
   CheckoutEvent, CheckoutEventData, CheckoutSession, CheckoutState, LineItem, Total,
 } from "@/components/lib/contracts";
@@ -64,10 +64,8 @@ function build(id: string, recordedId: string, steps: Step[], final: Partial<Che
 }
 
 const SPT_ID = "3f9a1c2e-7b44-4c1a-9d0e-5a6b7c8d9e01";
-const X402_ID = "8d21e0b4-2c55-4f3b-a1e7-9c0d1e2f3a02";
 const HANDOFF_ID = "c47b9a10-6e33-4d2f-b8a9-0f1e2d3c4b03";
 const PI = "pi_3QzDemoSptA1b2C3d4E5f6";
-const TX = "0x9f2c4b1e7a6d5c3b2a1908f7e6d5c4b3a2918f7e6d5c4b3a2918f7e6d5c4b3a2";
 
 export const CHECKOUT_SPT = build(SPT_ID, "spt", [
   [0, null, "quoting", "Cart created on WooCommerce Store API"],
@@ -83,24 +81,6 @@ export const CHECKOUT_SPT = build(SPT_ID, "spt", [
     id: "0dde0000-0000-4000-8000-000000000001", checkout_id: SPT_ID, store_id: STORE_IDS.woo, status: "confirmed",
     merchant_order_id: "1042", merchant_order_url: `${MOCK_WOO_URL}/wp-admin/post.php?post=1042&action=edit`,
     payment: { rail: "stripe_spt", reference: PI, amount: { amount: 4700, currency: "USD" } }, created_at: iso(12400),
-  },
-});
-
-export const CHECKOUT_X402 = build(X402_ID, "x402", [
-  [0, null, "quoting", "Cart created on WooCommerce Store API"],
-  [1100, "quoting", "awaiting_payment", "Quote $47.00 frozen for 10 minutes", { amount: { amount: 4700, currency: "USD" } }],
-  [8600, "awaiting_payment", "payment_authorized", "x402 payment settled on Base Sepolia",
-    { rail: "x402", tx_hash: TX, network: "eip155:84532", amount: { amount: 4700, currency: "USD" } }],
-  [9900, "payment_authorized", "placing_order", "Placing order on WooCommerce"],
-  [11300, "placing_order", "order_placed", "WooCommerce order #1043 placed",
-    { merchant_order_id: "1043", merchant_order_url: `${MOCK_WOO_URL}/wp-admin/post.php?post=1043&action=edit` }],
-  [11600, "order_placed", "completed", "Complete (x402 settles up front)", { rail: "x402" }],
-], {
-  order: {
-    id: "0dde0000-0000-4000-8000-000000000002", checkout_id: X402_ID, store_id: STORE_IDS.woo, status: "confirmed",
-    merchant_order_id: "1043", merchant_order_url: `${MOCK_WOO_URL}/wp-admin/post.php?post=1043&action=edit`,
-    payment: { rail: "x402", reference: TX, amount: { amount: 4700, currency: "USD" }, payer: "0x51c0ffee00000000000000000000000000d3m0" },
-    created_at: iso(11300),
   },
 });
 
@@ -123,6 +103,5 @@ export const CHECKOUT_HANDOFF = build(HANDOFF_ID, "handoff", [
 
 export const MOCK_CHECKOUTS: Record<string, CheckoutReplay> = {
   spt: CHECKOUT_SPT,
-  x402: CHECKOUT_X402,
   handoff: CHECKOUT_HANDOFF,
 };

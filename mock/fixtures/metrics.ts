@@ -12,5 +12,5 @@ export const MOCK_METRICS: UiMetrics = {
   gmv_minor: { USD: 14100 },
   median_seconds_to_ready: 38,
   stores_by_best_method: { api: 4, dom: 3, computer_use: 1, none: 1 },
-  orders_by_rail: { stripe_spt: 2, x402: 1 },
+  orders_by_rail: { stripe_spt: 3 },
 };

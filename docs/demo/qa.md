@@ -15,7 +15,6 @@ Source: spec 05 §10.5.
 
   Legal risk is ToS/contract rather than CFAA: hiQ v. LinkedIn (2022; hiQ lost on contract) and Meta v. Bright Data (2024). Consent is handled by the claim and opt-out loop, which is the lesson of Amazon "Buy for Me".
 - **"Who's the merchant of record?"** In the demo, the agent pays ShoperZero and we place the order on **our own** Woo store with an offline method plus a receipt note. Third-party stores get a `continue_url` handoff. In production, "we buy from the merchant" would make us a reseller/MoR (tax, chargebacks), so production runs through the merchant plugin or Stripe Connect, with the merchant as MoR.
-- **"Why x402 for physical goods?"** It is the agent-to-us rail, not a merchant rail. It is instant and needs no account. Volume is small (about $28k/day, Mar 2026), so Stripe SPT is the default.
 - **"Isn't this Rye / Channel3 / Crossmint?"** They're closed, per-call, agent-developer side, and often browser automation. We give the merchant open endpoints and a claim loop, and agents use them for free. Our computer-use probe is a diagnostic, not the product.
 - **"Stale prices?"** `verifyOffer` checks live before the quote. Woo `expected_total` guards against drift, quotes have a 10-minute TTL, and the total is immutable once awaiting payment.
 - **"UCP-compliant?"** We mirror Shopify's live profile (`2026-08-25`, also listing `2026-04-08`) and claim only the capabilities we implement. We have not been certified.

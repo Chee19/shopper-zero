@@ -6,7 +6,7 @@ import { getCheckoutReplay, getCheckoutView, getLatestCheckoutId } from "../../_
 
 export const metadata: Metadata = { title: "Live checkout · ShoperZero" };
 
-/** Follows the newest checkout; ?replay=spt|x402|handoff plays a recording (the default in UI_MOCK). */
+/** Follows the newest checkout; ?replay=spt|handoff plays a recording (the default in UI_MOCK). */
 export default async function LiveCheckoutPage(props: PageProps<"/checkouts/live">) {
   const sp = await props.searchParams;
   const replayName = typeof sp.replay === "string" ? sp.replay : UI_MOCK ? "spt" : null;

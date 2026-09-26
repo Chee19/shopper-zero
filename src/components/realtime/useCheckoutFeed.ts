@@ -71,6 +71,9 @@ export function useCheckoutFeed(opts: {
       return r.ok ? redactCheckout(r.data) : null;
     };
     const loadEvents = async (id: string): Promise<CheckoutEvent[]> => {
+      // WS4's REST events route first (works without Supabase, e.g. the file-backed mock checkout), then a public select.
+      const r = await fetchJson<{ events: CheckoutEvent[] }>(`/api/v1/checkouts/${id}/events`);
+      if (r.ok && Array.isArray(r.data.events)) return r.data.events;
       if (!HAS_SUPABASE_ENV) return [];
       const { data } = await browserSupabase().from("checkout_events").select("*").eq("checkout_id", id).order("id");
       return (data ?? []).map((r) => rowToEvent(r as Row));

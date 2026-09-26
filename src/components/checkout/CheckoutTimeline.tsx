@@ -190,9 +190,6 @@ function CheckoutSummary({ checkout, unavailable, escalationUrl, lastState }: {
             <code className="min-w-0 truncate font-mono text-[12px]" title={checkout.order.payment.reference}>{checkout.order.payment.reference}</code>
             <CopyButton text={checkout.order.payment.reference} />
           </p>
-          {checkout.order.payment.payer ? (
-            <p className="text-[12.5px] text-muted">Payer {checkout.order.payment.payer.slice(0, 6)}…{checkout.order.payment.payer.slice(-4)}</p>
-          ) : null}
         </Card>
       ) : null}
 

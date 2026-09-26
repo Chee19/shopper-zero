@@ -1,6 +1,6 @@
 # The 2-minute demo script
 
-Source: spec 05 §10.2. Rehearse twice; target 2:00 ± 10 s.
+Source: spec 05 §10.2. Rehearse twice; target 2:00 ± 10 s. The event slot is three minutes (DECISIONS MVP scope), so the extra minute is for Q&A.
 
 
 | Time | Screen / exact action | Say (verbatim-ish) |
