@@ -60,7 +60,7 @@ export function CheckoutTimeline({
             <Chip tone={lastState === "completed" ? "good" : failure ? "bad" : lastState === "handoff" || lastState === "requires_action" ? "warn" : "accent"}>
               {STATE_TO_STATUS[lastState]}
             </Chip>
-            <code className="font-mono text-[12.5px] text-muted">{lastState}</code>
+            {STATE_TO_STATUS[lastState] !== lastState ? <code className="font-mono text-[12.5px] text-muted">{lastState}</code> : null}
           </>
         ) : null}
         <span className="ml-auto flex items-center gap-2">
@@ -92,7 +92,7 @@ export function CheckoutTimeline({
         </Banner>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem]">
         <Card className="px-5 py-5">
           <h2 className="eyebrow mb-3">State</h2>
           <StateRail events={events} current={lastState} />
@@ -144,7 +144,7 @@ function CheckoutSummary({ checkout, unavailable, escalationUrl, lastState }: {
   const selected = checkout.shipping?.options.find((o) => o.id === checkout.shipping?.selected_option_id);
   const handlers = checkout.payment.handlers;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <Card className="px-5 py-5">
         <h2 className="eyebrow mb-3">Summary</h2>
         <ul className="flex flex-col gap-2 text-[14px]">
@@ -185,9 +185,9 @@ function CheckoutSummary({ checkout, unavailable, escalationUrl, lastState }: {
               Open in {checkout.connector === "woo_store_api" ? "Woo" : "merchant admin"} <External size={12} />
             </a>
           ) : null}
-          <p className="mt-2 flex items-center gap-1 text-ink-2">
-            <span>{RAIL_LABEL[checkout.order.payment.rail]} ·</span>
-            <code className="truncate font-mono text-[12px]" title={checkout.order.payment.reference}>{checkout.order.payment.reference}</code>
+          <p className="mt-2 text-ink-2">{RAIL_LABEL[checkout.order.payment.rail]} payment reference</p>
+          <p className="flex min-w-0 items-center gap-1">
+            <code className="min-w-0 truncate font-mono text-[12px]" title={checkout.order.payment.reference}>{checkout.order.payment.reference}</code>
             <CopyButton text={checkout.order.payment.reference} />
           </p>
           {checkout.order.payment.payer ? (

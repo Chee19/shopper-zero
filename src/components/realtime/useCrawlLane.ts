@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toCrawlRun, type CrawlRunRow } from "@/lib/db/mappers";
 import type { CrawlRun, Store } from "../lib/contracts";
 import { HAS_SUPABASE_ENV, UI_MOCK } from "../lib/flags";
-import { fetchJson, isoOr, isoOrNull, startLiveFeed, type LiveFeed } from "./live";
+import { fetchJson, isoOr, startLiveFeed, type LiveFeed } from "./live";
 import { shiftTimes, usePlayhead } from "./replay";
 import { browserSupabase } from "./supabase-browser";
 import type { IndexingFrame, LiveMode } from "./types";
@@ -13,22 +14,7 @@ type Lane = { run: CrawlRun; store: Store };
 
 export const isRunTerminal = (r: Pick<CrawlRun, "status">) => r.status === "succeeded" || r.status === "failed";
 
-function rowToRun(r: Row, prev: CrawlRun): CrawlRun {
-  const num = (v: unknown, fb: number) => (typeof v === "number" ? v : Number(v ?? fb) || 0);
-  return {
-    ...prev,
-    status: (r.status as CrawlRun["status"]) ?? prev.status,
-    strategy: (r.strategy as string | null | undefined) ?? prev.strategy,
-    products_found: num(r.products_found, prev.products_found),
-    pages_fetched: num(r.pages_fetched, prev.pages_fetched),
-    pages_failed: num(r.pages_failed, prev.pages_failed),
-    log: Array.isArray(r.log) ? (r.log as CrawlRun["log"]) : prev.log,
-    error: r.error === undefined ? prev.error : ((r.error as string | null) ?? null),
-    started_at: r.started_at === undefined ? prev.started_at : isoOrNull(r.started_at),
-    finished_at: r.finished_at === undefined ? prev.finished_at : isoOrNull(r.finished_at),
-    updated_at: isoOr(r.updated_at, prev.updated_at),
-  };
-}
+const rowToRun = (r: Row): CrawlRun => toCrawlRun(r as unknown as CrawlRunRow);
 
 /** Merges the store columns the lane shows from a `stores` row (Realtime / public select). */
 function mergeStoreRow(r: Row, prev: Store): Store {
@@ -96,7 +82,7 @@ export function useCrawlLane(initial: Lane, replay?: IndexingFrame[] | null): La
           r.ok ? null : sb.from("crawl_runs").select("*").eq("id", runId).maybeSingle(),
           s.ok ? null : sb.from("stores").select("*").eq("id", storeId).maybeSingle(),
         ]);
-        if (rr?.data) applyRun(rowToRun(rr.data as Row, latest.current.run));
+        if (rr?.data) applyRun(rowToRun(rr.data as Row));
         if (sr?.data) applyStore(mergeStoreRow(sr.data as Row, latest.current.store));
       }
     };
@@ -104,7 +90,7 @@ export function useCrawlLane(initial: Lane, replay?: IndexingFrame[] | null): La
       topic: `crawl:${runId}`,
       realtime: HAS_SUPABASE_ENV,
       subscriptions: [
-        { table: "crawl_runs", event: "UPDATE", filter: `id=eq.${runId}`, onRow: (row) => applyRun(rowToRun(row, latest.current.run)) },
+        { table: "crawl_runs", event: "UPDATE", filter: `id=eq.${runId}`, onRow: (row) => applyRun(rowToRun(row)) },
         { table: "stores", event: "UPDATE", filter: `id=eq.${storeId}`, onRow: (row) => applyStore(mergeStoreRow(row, latest.current.store)) },
       ],
       reconcile,

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toCheckoutEvent, type CheckoutEventRow } from "@/lib/db/mappers";
 import type { CheckoutEvent, CheckoutSession, CheckoutState } from "../lib/contracts";
 import { HAS_SUPABASE_ENV, UI_MOCK } from "../lib/flags";
 import { redactCheckout, type PublicCheckout } from "../checkout/redact";
-import { fetchJson, isoOr, startLiveFeed, type LiveFeed } from "./live";
+import { fetchJson, startLiveFeed, type LiveFeed } from "./live";
 import { shiftTimes, usePlayhead } from "./replay";
 import { browserSupabase } from "./supabase-browser";
 import type { CheckoutReplayFrame, LiveMode } from "./types";
@@ -13,17 +14,7 @@ type Row = Record<string, unknown>;
 
 export const TERMINAL_STATES: CheckoutState[] = ["completed", "failed", "expired", "canceled", "handoff"];
 
-function rowToEvent(r: Row): CheckoutEvent {
-  return {
-    id: Number(r.id),
-    checkout_id: String(r.checkout_id),
-    from_state: (r.from_state as CheckoutState | null) ?? null,
-    to_state: r.to_state as CheckoutState,
-    message: (r.message as string | null) ?? null,
-    data: (r.data && typeof r.data === "object" ? r.data : {}) as CheckoutEvent["data"],
-    created_at: isoOr(r.created_at, new Date(0).toISOString()),
-  };
-}
+const rowToEvent = (r: Row): CheckoutEvent => toCheckoutEvent(r as unknown as CheckoutEventRow);
 
 function mergeEvents(a: CheckoutEvent[], b: CheckoutEvent[]): CheckoutEvent[] {
   const byId = new Map<number, CheckoutEvent>();

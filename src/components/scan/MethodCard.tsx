@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { AccessMethod, AccessProbe, Capabilities, DomRecipe, ProbeSignal } from "../lib/contracts";
+import type { AccessProbe, Capabilities, DomRecipe, ProbeSignal } from "../lib/contracts";
 import { ago, elapsed, formatSeconds, formatUsd } from "../lib/format";
 import { CAPABILITY_KEYS, CAPABILITY_LABELS, METHOD_META, costOf, statusChip } from "../lib/methods";
 import { Chip } from "../ui/Chip";
@@ -216,5 +216,3 @@ export function DomRecipePreview({ recipe, now }: { recipe: DomRecipe; now: numb
     </div>
   );
 }
-
-export const methodIndex = (m: AccessMethod) => ["api", "dom", "computer_use"].indexOf(m);

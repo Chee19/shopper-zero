@@ -11,7 +11,6 @@ export async function getUiMetrics(): Promise<UiMetrics | null> {
   if (UI_MOCK) return MOCK_METRICS;
   try {
     const db = await loadDb();
-    if (!db) return null;
     const base = await db.getPublicMetrics();
     return {
       ...base,

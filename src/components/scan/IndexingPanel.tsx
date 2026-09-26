@@ -10,7 +10,7 @@ import { STAGES, currentStage, latestTotalEstimate, logStep, logTime } from "../
 import { STRATEGY_LABELS } from "../lib/methods";
 import { useCrawlLane } from "../realtime/useCrawlLane";
 import type { IndexingFrame, LiveMode } from "../realtime/types";
-import { Button, ButtonLink } from "../ui/Button";
+import { ButtonLink } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Chip, LivePill } from "../ui/Chip";
 import { CountUp } from "../ui/CountUp";
@@ -104,6 +104,14 @@ export function IndexingPanel({
         ) : null}
       </Card>
 
+      {run.status === "succeeded" && !after && store.status !== "blocked" ? (
+        <Banner tone="accent">
+          <p>
+            Indexed {run.products_found.toLocaleString("en-US")} products. The grade is still being computed.
+            {storeHref ? <Link href={storeHref} className="ml-2 text-accent-text hover:underline">Open the store page →</Link> : null}
+          </p>
+        </Banner>
+      ) : null}
       {ready && after ? (
         isReplay && !UI_MOCK ? (
           <Banner tone="good">
@@ -205,6 +213,3 @@ export function CrawlLog({ run }: { run: CrawlRun }) {
   );
 }
 
-export function RetryButton({ onClick }: { onClick: () => void }) {
-  return <Button variant="secondary" onClick={onClick}>Retry</Button>;
-}

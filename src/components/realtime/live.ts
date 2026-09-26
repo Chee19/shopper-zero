@@ -122,9 +122,8 @@ export async function fetchJson<T>(url: string): Promise<{ ok: true; data: T } |
   return { ok: true, data: (await res.json()) as T };
 }
 
-export const isoOrNull = (v: unknown): string | null => {
-  if (typeof v !== "string" || !v) return null;
+export const isoOr = (v: unknown, fallback: string): string => {
+  if (typeof v !== "string" || !v) return fallback;
   const t = Date.parse(v);
-  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+  return Number.isFinite(t) ? new Date(t).toISOString() : fallback;
 };
-export const isoOr = (v: unknown, fallback: string): string => isoOrNull(v) ?? fallback;

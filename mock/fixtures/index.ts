@@ -2,7 +2,7 @@ import type { ScanReplay } from "@/components/realtime/types";
 import { buildCascadeFrames } from "./cascade";
 import { buildIndexing } from "./crawl-scripts";
 import { MOCK_SCANS } from "./scans";
-import { MOCK_STORES, RECORDED_AT, mockStoreBySlug } from "./stores";
+import { MOCK_STORES, RECORDED_AT } from "./stores";
 
 export { MOCK_STORES, mockStoreBySlug, withAppUrl, storeUrls, MOCK_WOO_URL, RECORDED_AT } from "./stores";
 export { mockProducts } from "./products";
@@ -37,10 +37,3 @@ export function mockScanReplay(id: string): ScanReplay | null {
     store,
   };
 }
-
-export function mockStoreForScan(id: string) {
-  const final = MOCK_SCANS[id];
-  return final ? (MOCK_STORES.find((s) => s.id === final.store_id) ?? null) : null;
-}
-
-export const mockStore = mockStoreBySlug;

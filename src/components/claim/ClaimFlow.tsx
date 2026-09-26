@@ -169,7 +169,7 @@ export function ClaimFlow({ slug, domain, storeHref }: { slug: string; domain: s
 
   const dns = claim.instructions.dns_txt;
   const meta = claim.instructions.meta_tag;
-  const apex = dns.alt_hosts[0];
+  const apex = dns.alt_hosts.at(-1);
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 md:grid-cols-2">

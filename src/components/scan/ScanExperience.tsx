@@ -45,6 +45,11 @@ export function ScanExperience({
 
   async function makeReady(): Promise<CtaResult> {
     if (replay) {
+      // Mirrors POST /api/v1/stores: a computer-use-only store has no catalog to index (422), a blocked one is blocked.
+      if (scan.best_method === "none") return { error: "Blocked by bot protection.", blocked: true };
+      if (scan.best_method === "computer_use") {
+        return { error: "This store is reachable by computer use only, so there's no catalog to index. Claim it to connect a feed." };
+      }
       setReplayIndexing(true);
       setIndexKey((k) => k + 1);
       scrollToIndexing();
