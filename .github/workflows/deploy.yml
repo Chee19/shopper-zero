@@ -1,6 +1,6 @@
 name: Deploy
 
-# On every push to main: apply Supabase migrations, then ship to Vercel production.
+# On every push to main: run the CI gate, apply Supabase migrations, then ship to Vercel production.
 on:
   push:
     branches: [main]
@@ -16,8 +16,12 @@ env:
   VERCEL_PROJECT_ID: prj_mcZt6AVAa9iKZoaF5Ld5yOo5phV0
 
 jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
   migrate:
     name: Supabase migrations
+    needs: check
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
