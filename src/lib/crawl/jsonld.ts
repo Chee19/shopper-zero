@@ -108,8 +108,8 @@ function flattenOffers(offersRaw: JsonLdNode | JsonLdNode[] | undefined, deref: 
 
 const LIST_PRICE_TYPE = /StrikethroughPrice|ListPrice|MSRP|SRP/i;
 
-function offerFromNode(o: JsonLdNode, fallbackCurrency: string | null): OfferRead {
-  const specs = arr(o.priceSpecification).filter(isRecord);
+function offerFromNode(o: JsonLdNode, deref: Deref, fallbackCurrency: string | null): OfferRead {
+  const specs = arr(o.priceSpecification).map((s) => derefRecord(deref, s)).filter((s): s is JsonLdNode => s != null);
   const listSpec = specs.find((s) => LIST_PRICE_TYPE.test(String(s.priceType ?? "")));
   const saleSpec = specs.find((s) => s !== listSpec && s.price != null);
   const raw = o.price ?? o.lowPrice ?? saleSpec?.price ?? (specs.length === 1 ? specs[0].price : undefined);
@@ -130,7 +130,7 @@ function offerFromNode(o: JsonLdNode, fallbackCurrency: string | null): OfferRea
 }
 
 function readOffers(offersRaw: JsonLdNode | JsonLdNode[] | undefined, deref: Deref, fallbackCurrency: string | null): OfferRead[] {
-  return flattenOffers(offersRaw, deref).map((o) => offerFromNode(o, fallbackCurrency));
+  return flattenOffers(offersRaw, deref).map((o) => offerFromNode(o, deref, fallbackCurrency));
 }
 
 function bestOffer(offers: OfferRead[]): OfferRead | null {
@@ -194,20 +194,19 @@ function variantFromNode(n: JsonLdNode, o: OfferRead, variesBy: string[], checke
 }
 
 // One node, >=2 offers with distinct sku/name (rule 6): each offer becomes its own variant.
-// Uses the offer's own sku/productID first, not the shared product node's, so variants stay distinct.
+// external_id/sku/gtin come from the offer alone, never the shared product node.
+// A product-level fallback would give every offer-variant the same key and finalizeProduct's variantKey() dedupe would drop all but one.
 function variantFromOffer(o: OfferRead, main: JsonLdNode, checkedAt: string, pageUrl: string): DraftVariant {
   const productName = typeof main.name === "string" ? decodeEntities(main.name).trim() : "";
   let title = o.name ?? "";
   if (productName && title.startsWith(productName)) title = title.slice(productName.length).replace(/^[\s\-:|/]+/, "").trim();
   if (!title) title = o.sku ?? "";
-  const gtin = gtinOf(main);
-  const externalRaw = o.sku ?? main.productID ?? gtin ?? null;
   return {
-    external_id: externalRaw != null ? String(externalRaw) : null,
+    external_id: o.sku ?? null,
     title,
     options: {},
     sku: o.sku ?? null,
-    gtin,
+    gtin: null,
     image_url: null,
     inventory_quantity: null,
     offer: { price: o.price, compare_at: o.compareAt, availability: o.availability, url: o.url ?? pageUrl, checked_at: checkedAt },
@@ -223,9 +222,15 @@ export function extractJsonLdProduct(
   const nodes = parseJsonLdNodes($);
   if (!nodes.length) return { product: null, miss: "no_jsonld", nodes: 0 };
 
-  const byId = new Map<string, JsonLdNode>(nodes.filter((n) => typeof n["@id"] === "string").map((n) => [n["@id"], n]));
+  // mainEntity/itemListElement stubs like {"@id": X} would otherwise overwrite the real node; skip them, first real node wins.
+  const byId = new Map<string, JsonLdNode>();
+  for (const n of nodes) {
+    const id = n["@id"];
+    if (typeof id === "string" && !byId.has(id) && Object.keys(n).length > 1) byId.set(id, n);
+  }
   const deref = makeDeref(byId);
-  const canon = (u: unknown): string | null => (typeof u === "string" ? canonicalizeProductUrl(u, pageUrl) : null);
+  const canon = (u: unknown): string | null =>
+    typeof u === "string" && URL.canParse(u, pageUrl) ? canonicalizeProductUrl(u, pageUrl) : null;
   const page = canon(pageUrl);
 
   const metaCurrency = $('meta[itemprop="priceCurrency"], meta[property="product:price:currency"]').first().attr("content") ?? null;
@@ -245,14 +250,15 @@ export function extractJsonLdProduct(
     const groupMembers = products.filter((p) => derefRecord(deref, p.isVariantOf) === group || (gid != null && p.inProductGroupWithID === gid));
     variantNodes = [...new Set([...derefedVariants, ...groupMembers])];
   } else {
-    main = products.find((p) => canon(p.url) === page || arr(p.offers).some((o) => canon(derefRecord(deref, o)?.url) === page))
-      ?? products.find((p) => p.offers) ?? products[0];
+    const matchesPage = (p: JsonLdNode) => canon(p.url) === page || arr(p.offers).some((o) => canon(derefRecord(deref, o)?.url) === page);
+    const matched = products.find(matchesPage);
+    main = matched ?? products.find((p) => p.offers) ?? products[0];
     const isVariantOfRef = derefRecord(deref, main.isVariantOf);
     const key = main.inProductGroupWithID ?? isVariantOfRef?.["@id"];
     variantNodes = key != null
       ? products.filter((p) => p.inProductGroupWithID === key || derefRecord(deref, p.isVariantOf)?.["@id"] === key)
       : [main];
-    if (products.length > 3 && !canon(main.url) && variantNodes.length === 1) {
+    if (products.length > 3 && !matched && variantNodes.length === 1) {
       // Many unrelated products, none matching the page: a listing page, not a PDP.
       return { product: null, miss: "no_product", nodes: nodes.length };
     }
