@@ -138,8 +138,8 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
    ```ts
    // src/features/crawl/index.ts  → WS2 (replace bodies, keep names + types)
    // STUB created by WS1 at T+30. Owned by WS2 from then on: replace bodies, keep signatures.
-   import type { ComputeReadinessFn, CrawlStoreFn, StartStoreCrawlFn, VerifyOfferFn } from "@/lib/contracts";
-   import { AppError } from "@/lib/errors";
+   import type { ComputeReadinessFn, CrawlStoreFn, StartStoreCrawlFn, VerifyOfferFn } from "@/contracts";
+   import { AppError } from "@/shared/errors";
 
    const notYet = (what: string) => new AppError("not_implemented", `${what} is not implemented yet`);
 
@@ -150,14 +150,14 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
    ```
    ```ts
    // src/features/crawl/mcp-tools.ts  → WS2 (register index_store, get_crawl_status, scan_store, get_scan here)
-   import type { ToolRegistrar } from "@/lib/mcp/types";
+   import type { ToolRegistrar } from "@/infrastructure/mcp/types";
    export const registerCrawlTools: ToolRegistrar = () => {};
    ```
    ```ts
    // src/features/scan/index.ts  → WS2 (replace bodies, keep names + types)
    // STUB created by WS1 at T+30. Owned by WS2 from then on: replace bodies, keep signatures.
-   import type { RunScanFn, StartScanFn } from "@/lib/contracts";
-   import { AppError } from "@/lib/errors";
+   import type { RunScanFn, StartScanFn } from "@/contracts";
+   import { AppError } from "@/shared/errors";
 
    const notYet = (what: string) => new AppError("not_implemented", `${what} is not implemented yet`);
 
@@ -167,8 +167,8 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
    ```ts
    // src/features/checkout/index.ts  → WS4 (replace bodies, keep names + types)
    // STUB created by WS1 at T+30. Owned by WS4 from then on: replace bodies, keep signatures.
-   import type { CheckoutService } from "@/lib/contracts";
-   import { AppError } from "@/lib/errors";
+   import type { CheckoutService } from "@/contracts";
+   import { AppError } from "@/shared/errors";
 
    const notYet = (what: string) => new AppError("not_implemented", `${what} is not implemented yet`);
 
@@ -182,11 +182,11 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
    ```
    ```ts
    // src/features/checkout/mcp-tools.ts  → WS4 (register the 6 checkout tools here)
-   import type { ToolRegistrar } from "@/lib/mcp/types";
+   import type { ToolRegistrar } from "@/infrastructure/mcp/types";
    export const registerCheckoutTools: ToolRegistrar = () => {};
    ```
 6. Add `supabase/migrations/20260926010000_core.sql` (§4) and `supabase/seed.sql` (§5). Change `src/proxy.ts` (§8) and `.env.example` (§9).
-7. `npm run build` → green. Push. Announce: **"contracts frozen; import from `@/lib/contracts`"**.
+7. `npm run build` → green. Push. Announce: **"contracts frozen; import from `@/contracts`"**.
 
 If `mcp-handler`'s types do not expose the callback parameter this way (UNVERIFIED), use `import type { McpServer } from "@modelcontextprotocol/server"` in `types.ts`. Nothing else changes.
 
@@ -1123,14 +1123,14 @@ Commit `types.gen.ts`. Regenerate it after every migration, from any stream, and
 
 ## 6. `src/infrastructure/database/**`
 
-All files except `mappers.ts` and `upsert-row.ts` start with `import "server-only"`. `index.ts` re-exports everything, so other streams `import { getProduct } from "@/lib/db"`. The signatures are fixed by spec 00 §6.10.
+All files except `mappers.ts` and `upsert-row.ts` start with `import "server-only"`. `index.ts` re-exports everything, so other streams `import { getProduct } from "@/infrastructure/database"`. The signatures are fixed by spec 00 §6.10.
 
 ### 6.1 Client (`client.ts`) and typed Supabase clients
 ```ts
 // src/infrastructure/database/client.ts
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type { Database } from "./types.gen";
 
 let client: SupabaseClient<Database> | null = null;
@@ -1143,7 +1143,7 @@ export function db(): SupabaseClient<Database> {
 // src/infrastructure/supabase/admin.ts (change: add the Database generic)
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/db/types.gen";
+import type { Database } from "@/infrastructure/database/types.gen";
 
 export function createAdminClient() {
   return createClient<Database>(
@@ -1182,8 +1182,8 @@ import type {
   AccessMethod, Availability, CheckoutConnectorId, CheckoutEvent, CheckoutEventData, CheckoutState,
   CrawlLogEntry, CrawlRun, DomRecipe, ExtractionSource, IndexedProduct, IndexedVariant, Order, PaymentRailId,
   Platform, ProductSummary, ScanReport, Store, StoreRef, StoreStrategy, StoreSummary, StoreUrls,
-} from "@/lib/contracts";
-import { PLATFORMS } from "@/lib/contracts";
+} from "@/contracts";
+import { PLATFORMS } from "@/contracts";
 
 export const iso = (ts: string): string => new Date(ts).toISOString();
 export const isoOrNull = (ts: string | null | undefined): string | null => (ts ? iso(ts) : null);
@@ -1509,9 +1509,9 @@ This module is the single place where `NormalizedProduct` becomes DB rows. Rules
 import { createHash } from "node:crypto";
 import {
   NormalizedProductSchema, type Availability, type NormalizedProduct, type NormalizedVariant,
-} from "@/lib/contracts";
-import { fromMinor } from "@/lib/money";
-import { shortHash, slugify } from "@/lib/slug";
+} from "@/contracts";
+import { fromMinor } from "@/shared/money";
+import { shortHash, slugify } from "@/shared/slug";
 
 /** One element of the p_products JSON array consumed by public.upsert_product_batch(). */
 export interface ProductUpsertRow {
@@ -1745,7 +1745,7 @@ Behavior summary:
 ```ts
 // src/shared/money.ts
 // Isomorphic (server + client). All money in the app is integer minor units.
-import type { Money } from "@/lib/contracts";
+import type { Money } from "@/contracts";
 
 const exponentCache = new Map<string, number>();
 
@@ -2091,7 +2091,7 @@ test("contracts", () => {
 Replace the file with the code below. The regex was tested against sample paths. Proxy runs on `/`, `/scan`, `/stores/x`, `/checkouts/x`, `/claim/x` and `/search`. It skips `/api/*`, `/s/*` (including `/s/x/.well-known/ucp`), `/.well-known/*`, `/llms.txt`, `/robots.txt`, `/openapi.json`, `/sitemap.xml`, `_next` assets and images.
 ```ts
 import type { NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/proxy";
+import { updateSession } from "@/infrastructure/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
   return updateSession(request);
@@ -2193,7 +2193,7 @@ Mirror every non-empty value into Vercel (Production + Preview) before E−60.
 // src/shared/errors.ts  (isomorphic)
 // Isomorphic. Throw AppError anywhere; route/tool wrappers turn it into the envelope.
 import { z } from "zod";
-import { API_ERROR_STATUS, type ApiErrorCode } from "@/lib/contracts";
+import { API_ERROR_STATUS, type ApiErrorCode } from "@/contracts";
 
 export class AppError extends Error {
   readonly code: ApiErrorCode;
@@ -2237,9 +2237,9 @@ export function toAppError(e: unknown): AppError {
 import "server-only";
 import type { NextRequest } from "next/server";
 import type { z } from "zod";
-import type { ApiErrorBody } from "@/lib/contracts";
-import { AppError, toAppError } from "@/lib/errors";
-import { log } from "@/lib/log";
+import type { ApiErrorBody } from "@/contracts";
+import { AppError, toAppError } from "@/shared/errors";
+import { log } from "@/shared/log";
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -2329,9 +2329,9 @@ export function route<Ctx>(
 Route usage (every public route file):
 ```ts
 // src/app/api/v1/products/[id]/route.ts (WS3), illustrative
-import { route, json, preflight } from "@/lib/http";
-import { getProduct } from "@/lib/db";
-import { AppError } from "@/lib/errors";
+import { route, json, preflight } from "@/shared/http";
+import { getProduct } from "@/infrastructure/database";
+import { AppError } from "@/shared/errors";
 
 export const GET = route("products.get", async (_req, ctx: RouteContext<"/api/v1/products/[id]">, { requestId }) => {
   const { id } = await ctx.params;
@@ -2381,7 +2381,7 @@ export const log = {
 ```ts
 // src/shared/env.ts  (server-only)
 import "server-only";
-import { AppError } from "@/lib/errors";
+import { AppError } from "@/shared/errors";
 
 export type EnvName =
   | "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" | "SUPABASE_SECRET_KEY"

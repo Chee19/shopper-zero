@@ -135,7 +135,7 @@ export type ScanReport = {
 | C7 | `DEMO_WALLET_MAX_USD` is empty in `.env.example` (code default `$25`); Next expands `$` in env files, so set it in Vercel/env as `$25` without escaping | `.env.example` |
 | C8 | `test:unit` runs with `--conditions=react-server` so tests can import server-only modules | `package.json` |
 | C9 | `checkout_events` is **private** (no anon read, not in Realtime). The checkout timeline (WS5 `/checkouts/{id}`, `/checkouts/live`) polls a server route that calls `listCheckoutEvents` with the service-role client. Realtime stays on `stores`, `crawl_runs`, `scans` | core migration, spec 05 |
-| C10 | Handle collision = same handle with a different `url`, unless both `external_id`s are non-null and equal. WS2 retries with `collisionHandle(handle, url)` from `@/lib/db` (deterministic) | core migration, `upsert-row.ts`, spec 02 |
+| C10 | Handle collision = same handle with a different `url`, unless both `external_id`s are non-null and equal. WS2 retries with `collisionHandle(handle, url)` from `@/infrastructure/database` (deterministic) | core migration, `upsert-row.ts`, spec 02 |
 | C11 | Products/variants of opted-out stores are hidden by RLS as well as by helpers; `stores` rows stay readable | core migration |
 | C12 | Store `metadata`/`readiness` merges happen in SQL via service-role RPC `merge_store_json` (no app-side read-modify-write) | core migration, `stores.ts` |
 | C13 | `search_products` honours `-term` / `-"phrase"` exclusions | core migration |

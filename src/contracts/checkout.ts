@@ -282,7 +282,7 @@ export interface CheckoutConnector {
 }
 // B5: every connector implements quote(store, QuoteInput, prev) and continueUrl(store, ResolvedLine[]) as above.
 // A store without a headless connector ends in CheckoutState "handoff" (→ status "requires_escalation").
-// Connector choice: resolveCheckoutConnector(store) from @/lib/checkout/connectors (WS4, B10).
+// Connector choice: resolveCheckoutConnector(store) from @/features/checkout/connectors (WS4, B10).
 
 export interface PaymentReceipt {
   rail: PaymentRailId;

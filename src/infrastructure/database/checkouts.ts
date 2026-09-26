@@ -139,6 +139,19 @@ export async function listCheckoutEvents(checkoutId: string): Promise<CheckoutEv
   return (data ?? []).map(toCheckoutEvent);
 }
 
+/** checkout_id of the newest checkout_events row (highest id), or null if there are none.
+ *  Service-role read. Used by WS5's /checkouts/live follow mode (DECISIONS C9: checkout_events is private). */
+export async function getLatestCheckoutId(): Promise<string | null> {
+  const { data, error } = await db()
+    .from("checkout_events")
+    .select("checkout_id")
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw toAppError(error);
+  return data && isUuid(data.checkout_id) ? data.checkout_id : null;
+}
+
 export async function insertOrder(o: Omit<Order, "id" | "created_at">): Promise<Order> {
   const { data, error } = await db()
     .from("orders")

@@ -13,7 +13,7 @@ This revision follows `docs/specs/DECISIONS.md`, which is binding.
   - The CTA calls `POST /api/v1/stores {store_id}`. An inline indexing lane (the round-1 crawl lane) takes over, and the flow ends on `/stores/{slug}` with the grade animating to **A**.
 - The round-1 multi-store view (`/scan?runs=…`) is **removed**. The crawl lane survives as a component inside `/scan/{id}`.
 - Contract names now come from spec 00 and DECISIONS §A. The scan types are `ScanReport`, `AccessProbe`, `AccessMethod`, `ProbeStatus`, `Capabilities`, `ProbeSignal` and `DomRecipe`. DB helpers include `getScan`, `getLatestScanForStore`, `getStoreById`, `listStores`, `listStoreProducts`, `getPublicMetrics` and `listCheckoutEvents`. The error envelope is `{error:{code,message,details?}}` (B11).
-- **B3 claims:** tokens live in the service-role-only `store_claims` table. WS5 goes through `getClaim`, `upsertClaim`, `markClaimVerified` and `setStoreOptOut` from `@/lib/db`. There is no `stores.claim_token` and no `metadata.claim`. The token strings follow spec 00: TXT `shoperzero-verify=<token>` and `<meta name="shoperzero-verify">`.
+- **B3 claims:** tokens live in the service-role-only `store_claims` table. WS5 goes through `getClaim`, `upsertClaim`, `markClaimVerified` and `setStoreOptOut` from `@/infrastructure/database`. There is no `stores.claim_token` and no `metadata.claim`. The token strings follow spec 00: TXT `shoperzero-verify=<token>` and `<meta name="shoperzero-verify">`.
 - **B16:** a new static `/bot` page describes the crawler and scanner and explains how to opt out.
 - Mock fixtures now include one `ScanReport` per `best_method` (`api`, `dom`, `computer_use`, `none`). The computer-use fixture has offline SVG screenshots and a step log.
 - The demo script now opens on a live scan that lands in `dom` with a poor grade, then goes Make agent-ready → A → Claude buys.
@@ -120,7 +120,7 @@ docs/demo/runbook.md  docs/demo/script.md  docs/demo/qa.md   (copied from §10)
 
 ## 3. Interfaces consumed
 
-Import types from `@/lib/contracts` (barrel; the scan types live in `scan.ts`). Import helpers from `@/lib/db`.
+Import types from `@/contracts` (barrel; the scan types live in `scan.ts`). Import helpers from `@/infrastructure/database`.
 
 | Need | Provider | Name (exact) | Fallback if not landed |
 |---|---|---|---|
@@ -133,12 +133,12 @@ Import types from `@/lib/contracts` (barrel; the scan types live in `scan.ts`). 
 | Crawl progress | WS2 | `GET /api/v1/crawl-runs/{id}`, Realtime on `crawl_runs` | Realtime only |
 | Store | WS1 / WS3 | `getStoreBySlug`, `getStoreById`, `listStores`; REST `GET /api/v1/stores/{slug}` (a `Store` plus `latest_crawl_run`) | — |
 | Products | WS1 | `listStoreProducts(storeId, {limit, page})` → `{products, total}` | — |
-| Checkout | WS4 | `getCheckout(id)` from `@/lib/checkout/service` (throws when missing); `GET /api/v1/checkouts/{id}` | Events only |
+| Checkout | WS4 | `getCheckout(id)` from `@/features/checkout/service` (throws when missing); `GET /api/v1/checkouts/{id}` | Events only |
 | Checkout events | WS1 | `listCheckoutEvents(checkoutId)`; Realtime on `checkout_events` | Browser select |
 | Claims | WS1 | `getClaim(storeId)`, `upsertClaim(storeId, method)` (**rotates the token**), `markClaimVerified(storeId)`, `setStoreOptOut(storeId, optedOut)` | none: the claim flow is a slide (cut item 8) |
 | Metrics | WS1 | `getPublicMetrics(): PublicMetrics` | Mock numbers |
-| HTTP helpers | WS1 | `route`, `json`, `errorResponse`, `parseJsonBody`, `preflight` (`@/lib/http`), `AppError` (`@/lib/errors`), `appUrl()`, `flags.crawlerUserAgent()` (`@/lib/env`) | Inline equivalents |
-| Supabase clients | scaffold | `@/lib/supabase/{client,server,admin}` | — |
+| HTTP helpers | WS1 | `route`, `json`, `errorResponse`, `parseJsonBody`, `preflight` (`@/shared/http`), `AppError` (`@/shared/errors`), `appUrl()`, `flags.crawlerUserAgent()` (`@/shared/env`) | Inline equivalents |
+| Supabase clients | scaffold | `@/infrastructure/supabase/{client,server,admin}` | — |
 
 ---
 
@@ -203,10 +203,10 @@ Import types from `@/lib/contracts` (barrel; the scan types live in `scan.ts`). 
 
 ```ts
 export const UI_MOCK = process.env.NEXT_PUBLIC_UI_MOCK === "1";
-export { appUrl } from "@/lib/env";      // WS1; fallback: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "")
+export { appUrl } from "@/shared/env";      // WS1; fallback: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "")
 ```
 
-**Rule:** when `UI_MOCK` is true, never construct a Supabase client and never import `@/lib/db`, since that module is server-only and would create a client. The UI must render with no Supabase env at all, so `_lib/queries.ts` imports db helpers lazily: `const db = await import("@/lib/db")` inside the non-mock branch.
+**Rule:** when `UI_MOCK` is true, never construct a Supabase client and never import `@/infrastructure/database`, since that module is server-only and would create a client. The UI must render with no Supabase env at all, so `_lib/queries.ts` imports db helpers lazily: `const db = await import("@/infrastructure/database")` inside the non-mock branch.
 
 ### 6.2 `_lib/queries.ts` (server-only)
 
@@ -237,7 +237,7 @@ Validate ids with `/^[0-9a-f-]{36}$/i`, or `/^replay-[a-z0-9-]{1,40}$/` for scan
 
 ### 6.3 Realtime hooks (`src/components/realtime/`)
 
-`supabase-browser.ts` holds one browser client per tab: `export const browserSupabase = () => (client ??= createClient())`, where `createClient` comes from `@/lib/supabase/client`.
+`supabase-browser.ts` holds one browser client per tab: `export const browserSupabase = () => (client ??= createClient())`, where `createClient` comes from `@/infrastructure/supabase/client`.
 
 All hooks follow the same pattern:
 - a unique channel topic (`${table}:${id}:${crypto.randomUUID()}`), so a StrictMode double mount does not collide;
@@ -802,7 +802,7 @@ export async function checkDns(host: string, token: string) {
 export async function checkMeta(host: string, token: string) {
   const res = await fetch(`https://${host}/`, {
     redirect: "follow", signal: AbortSignal.timeout(8000),
-    headers: { "User-Agent": crawlerUA(), Accept: "text/html" },   // flags.crawlerUserAgent() from @/lib/env
+    headers: { "User-Agent": crawlerUA(), Accept: "text/html" },   // flags.crawlerUserAgent() from @/shared/env
   }).catch(() => null);
   if (!res?.ok) return { method: "meta_tag", ok: false, observed: [],
     hint: `Couldn't fetch https://${host}/ (${res?.status ?? "network error"}).` } as const;
@@ -1046,7 +1046,7 @@ This keeps the build within about 2 hours and avoids `package-lock.json` conflic
    - Replays are **always labeled** "Replay · recorded {date}" in place of the LivePill.
    - Outside mock mode, a replay's CTA plays the recorded indexing frames and ends on a "Replay complete" card. It links to the real `/stores/{slug}` if `getStoreBySlug(fixture.store.slug)` exists, and otherwise stays on the card.
 
-### 9.2 Fixtures (`mock/fixtures/`, TypeScript typed with `@/lib/contracts`)
+### 9.2 Fixtures (`mock/fixtures/`, TypeScript typed with `@/contracts`)
 
 `tsconfig` includes `**/*.ts`, so the fixtures type-check. Import them relatively from `src/app/(site)/_lib/mock.ts` (for example `../../../../mock/fixtures`). Server pages pass fixture data to client components as props.
 

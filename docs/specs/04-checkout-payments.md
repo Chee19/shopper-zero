@@ -91,7 +91,7 @@ src/features/checkout/
   index.ts              # barrel: export const checkoutService: CheckoutService + named functions (00 §6.7)
   service.ts            # service implementation (§2.1, §10)
   state.ts              # transition(), annotate(), expireIfDue() over ALLOWED_TRANSITIONS
-  repo.ts               # ONLY: acquirePaymentLock / releasePaymentLock (RPC wrappers); everything else via @/lib/db
+  repo.ts               # ONLY: acquirePaymentLock / releasePaymentLock (RPC wrappers); everything else via @/infrastructure/database
   session.ts            # CheckoutRecord -> CheckoutSession, payment handlers, messages, summarize()
   payment-errors.ts     # internal: PaymentDeclinedError, PaymentActionRequiredError, WooError, PriceDriftError
   mcp-tools.ts          # registerCheckoutTools(server) (00 §6.8 location)
@@ -102,7 +102,7 @@ src/features/checkout/
 src/features/checkout/payments/
   index.ts              # getRail(), railForHandler()
   stripe.ts             # stripeRequest(), stripeSptRail, issueTestSpt()
-src/infrastructure/mcp/checkout-tools.ts          # one line: export { registerCheckoutTools } from "@/lib/checkout/mcp-tools";  (WS3's import path)
+src/infrastructure/mcp/checkout-tools.ts          # one line: export { registerCheckoutTools } from "@/features/checkout/mcp-tools";  (WS3's import path)
 src/features/checkout/demo/wallet/tools.ts           # registerDemoWalletTools(server)
 src/app/api/v1/checkouts/route.ts                 # POST
 src/app/api/v1/checkouts/[id]/route.ts            # GET, PUT
@@ -123,9 +123,9 @@ supabase/migrations/20260926024000_ws4_checkout.sql
 
 | Need | From | Name | If late |
 |---|---|---|---|
-| Contract types + schemas | WS1 `@/lib/contracts` | `CheckoutState`, `STATE_TO_STATUS`, `ALLOWED_TRANSITIONS`, `QuoteInput`, `ResolvedLine`, `Quote`, `CheckoutConnector`, `PaymentRail`, `PaymentReceipt`, `CheckoutRecord`, `CheckoutPaymentRecord`, `CheckoutSession`, `Order`, `CheckoutEvent`, `MESSAGE_CODES`, `QUOTE_TTL_SECONDS`, `PAYMENT_HANDLER_IDS`, `RequestContext`, `CheckoutService`, the MCP/wallet input schemas (00 §6.8), `DomRecipe`, `AccessMethod` (DECISIONS A) | Temporary local copy in `src/features/checkout/_contracts.tmp.ts`; delete at T+30 |
+| Contract types + schemas | WS1 `@/contracts` | `CheckoutState`, `STATE_TO_STATUS`, `ALLOWED_TRANSITIONS`, `QuoteInput`, `ResolvedLine`, `Quote`, `CheckoutConnector`, `PaymentRail`, `PaymentReceipt`, `CheckoutRecord`, `CheckoutPaymentRecord`, `CheckoutSession`, `Order`, `CheckoutEvent`, `MESSAGE_CODES`, `QUOTE_TTL_SECONDS`, `PAYMENT_HANDLER_IDS`, `RequestContext`, `CheckoutService`, the MCP/wallet input schemas (00 §6.8), `DomRecipe`, `AccessMethod` (DECISIONS A) | Temporary local copy in `src/features/checkout/_contracts.tmp.ts`; delete at T+30 |
 | Errors / HTTP / env / log | WS1 `src/shared/{errors,http,env,log}.ts` | `AppError`, `toAppError`, `route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`, `CORS_HEADERS`, `optionalEnv`, `requireEnv`, `appUrl`, `flags`, `log` | Minimal local shims with the same names, deleted when WS1 lands |
-| DB helpers | WS1 `@/lib/db` (B12) | `getVariantsForCheckout`, `getStoreById`, `insertCheckout`, `getCheckoutRecord`, `getCheckoutByIdempotencyKey`, `updateCheckoutRecord(id, patch, {expectState})`, `insertCheckoutEvent`, `listCheckoutEvents`, `insertOrder`, `getOrder`, `getOrderByCheckoutId`, `updateOrderStatus`, `logAgentRequest` | none; these are blocking. Use the seed |
+| DB helpers | WS1 `@/infrastructure/database` (B12) | `getVariantsForCheckout`, `getStoreById`, `insertCheckout`, `getCheckoutRecord`, `getCheckoutByIdempotencyKey`, `updateCheckoutRecord(id, patch, {expectState})`, `insertCheckoutEvent`, `listCheckoutEvents`, `insertOrder`, `getOrder`, `getOrderByCheckoutId`, `updateOrderStatus`, `logAgentRequest` | none; these are blocking. Use the seed |
 | Tables | WS1 core migration | `checkouts` (incl. `messages` jsonb), `checkout_events`, `orders`, `stores.best_method`, `stores.dom_recipe` | none |
 | MCP glue | WS1/WS3 `src/infrastructure/mcp/{types,result}.ts` | `McpServer` type, `toolResult`, `toolError` | `import type { McpServer } from "@modelcontextprotocol/server"` |
 | Packages | WS1 install | `zod@^4`, `mcp-handler@2.2.0`, `@modelcontextprotocol/server@2.1.0`, `stripe`; stretch `playwright-core`, `@browserbasehq/stagehand@4.1.0` | none |
@@ -142,7 +142,7 @@ import "server-only";
 import type {
   CheckoutEvent, CheckoutService, CheckoutSession, CompleteCheckoutInput, CreateCheckoutInput,
   Order, RequestContext, UpdateCheckoutInput,
-} from "@/lib/contracts";
+} from "@/contracts";
 
 export function createCheckout(input: CreateCheckoutInput, ctx: RequestContext): Promise<CheckoutSession>;
 export function updateCheckout(id: string, input: UpdateCheckoutInput, ctx: RequestContext): Promise<CheckoutSession>;
@@ -188,7 +188,7 @@ export function railForHandler(handlerId: string): PaymentRailId | null;
 
 ```ts
 // src/features/checkout/mcp-tools.ts   (re-exported from src/infrastructure/mcp/checkout-tools.ts)
-import type { McpServer } from "@/lib/mcp/types";      // fallback: "@modelcontextprotocol/server"
+import type { McpServer } from "@/infrastructure/mcp/types";      // fallback: "@modelcontextprotocol/server"
 export function registerCheckoutTools(server: McpServer): void;
 // registers: create_checkout, update_checkout, get_checkout, complete_checkout, cancel_checkout, get_order (B4)
 
@@ -761,10 +761,10 @@ If the sandbox offers SSH or wp-cli (**UNVERIFIED**), run `wp eval-file setup.ph
 ### 6.3 `transition()`, `annotate()` and `expireIfDue()`
 
 ```ts
-import { ALLOWED_TRANSITIONS, type CheckoutRecord, type CheckoutState } from "@/lib/contracts";
-import { AppError } from "@/lib/errors";
-import { insertCheckoutEvent, updateCheckoutRecord, type NewCheckout } from "@/lib/db";
-import { log } from "@/lib/log";
+import { ALLOWED_TRANSITIONS, type CheckoutRecord, type CheckoutState } from "@/contracts";
+import { AppError } from "@/shared/errors";
+import { insertCheckoutEvent, updateCheckoutRecord, type NewCheckout } from "@/infrastructure/database";
+import { log } from "@/shared/log";
 
 export type EventData = {            // exactly WS5 CCR-5 keys (B14); NO PII
   rail?: PaymentRailId; payment_intent_id?: string;
@@ -904,7 +904,7 @@ grant execute on function public.checkout_release_payment_lock(uuid) to service_
 `src/features/checkout/storage/file-repository.ts` contains only these two wrappers:
 ```ts
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/infrastructure/supabase/admin";
 export async function acquirePaymentLock(id: string, rail: PaymentRailId, seconds = 120): Promise<boolean> {
   const { data, error } = await createAdminClient().rpc("checkout_acquire_payment_lock", { p_id: id, p_rail: rail, p_seconds: seconds });
   if (error) throw toAppError(error);
@@ -1409,9 +1409,9 @@ Minimum charge: Stripe rejects card charges under $0.50 (USD 50). The handoff ne
 ## 10. Service orchestration (`service.ts`)
 
 Imports:
-- `@/lib/contracts`: types, `CreateCheckoutInputSchema`, `UpdateCheckoutInputSchema`, `CompleteCheckoutInputSchema`, `QUOTE_TTL_SECONDS`;
-- `@/lib/db`: the helpers in §1.4;
-- `@/lib/errors`: `AppError`;
+- `@/contracts`: types, `CreateCheckoutInputSchema`, `UpdateCheckoutInputSchema`, `CompleteCheckoutInputSchema`, `QUOTE_TTL_SECONDS`;
+- `@/infrastructure/database`: the helpers in §1.4;
+- `@/shared/errors`: `AppError`;
 - the local `state.ts`, `session.ts`, `repo.ts`, `connectors`, `payments`.
 
 ```ts
@@ -1751,7 +1751,7 @@ WS3's `/api/mcp` composes `registerCheckoutTools(server)` (B4). It may first wra
 ```ts
 // src/features/checkout/mcp-tools.ts
 import { z } from "zod";
-import { CreateCheckoutInputSchema, UpdateCheckoutInputSchema, CreateCheckoutToolInputSchema, UpdateCheckoutToolInputSchema, LineItemInputSchema } from "@/lib/contracts";
+import { CreateCheckoutInputSchema, UpdateCheckoutInputSchema, CreateCheckoutToolInputSchema, UpdateCheckoutToolInputSchema, LineItemInputSchema } from "@/contracts";
 
 const ShopifyLineItemSchema = z.object({
   item: z.object({ id: z.string().trim().min(1).max(100).describe("Variant id (uuid), optionally prefixed 'sz:variant:'") }),
@@ -1843,13 +1843,13 @@ Agent contract:
 
 ```ts
 import "server-only";
-import type { McpServer } from "@/lib/mcp/types";
-import { toolResult, toolError } from "@/lib/mcp/result";
+import type { McpServer } from "@/infrastructure/mcp/types";
+import { toolResult, toolError } from "@/infrastructure/mcp/result";
 import {
   CreateCheckoutToolInputSchema, UpdateCheckoutToolInputSchema, GetCheckoutToolInputSchema,
   CompleteCheckoutToolInputSchema, CancelCheckoutToolInputSchema, GetOrderToolInputSchema,
-} from "@/lib/contracts";
-import * as svc from "@/lib/checkout";
+} from "@/contracts";
+import * as svc from "@/features/checkout";
 import { summarize, summarizeOrder } from "./session";
 
 const mcpCtx = (meta?: { "ucp-agent"?: { profile?: string } }, idem?: string) =>
@@ -1886,7 +1886,7 @@ export function registerCheckoutTools(server: McpServer): void {
 ```ts
 import { createMcpHandler } from "mcp-handler";
 import { registerDemoWalletTools } from "@/lib/demo-wallet/tools";
-import { flags, optionalEnv } from "@/lib/env";
+import { flags, optionalEnv } from "@/shared/env";
 
 export const maxDuration = 60;
 const handler = createMcpHandler((server) => registerDemoWalletTools(server), {
@@ -2050,7 +2050,7 @@ set -a; . ./.env.local; set +a
 | CCR-W4-R2-4 | WS1 (contracts `ALLOWED_TRANSITIONS`), optional | Add `order_placed → failed`, for capture failure after placement. | Status `completed` with a recorded error is misleading in the rare capture-failure case | WS4 annotates `order_placed` with `error.code = capture_failed` (§15) |
 | CCR-W4-R2-5 | WS1 (00 §6.6 `CheckoutEvent.data` comment) | Replace the comment's key list with the WS5 CCR-5 keys (B14): `rail, payment_intent_id, merchant_order_id, merchant_order_url, continue_url, amount, error_code, simulated`. | 00 still mentions `payment_intent` / `explorer_url` | WS4 writes the CCR-5 keys regardless |
 | CCR-W4-R2-6 | WS1 (00 §6.8 registry) | Record that `create_checkout`/`update_checkout` accept the Shopify line-item alias `{item:{id}, quantity}` (WS4's `CreateCheckoutMcpInputSchema`/`UpdateCheckoutMcpInputSchema` extend the contract schemas). `MCP_TOOL_INPUTS` may point at the WS4 schemas or keep the strict ones for docs. | Coordinator item 2; Shopify UCP prompts work unchanged | WS4's registrar uses its extended schemas anyway; the contract schemas stay the REST shape |
-| CCR-W4-R2-7 | WS2 | After a scan, write `stores.checkout_connector = resolveCheckoutConnector(store)` (import from `@/lib/checkout/connectors`). A `dom_recipe` counts as "usable" when it has `add_to_cart` and one of `cart_link` / `checkout_link`; please fill `verified_at` when the DOM probe clicked through. | Honest `checkout_methods` display; browser connector input | WS4 resolves at checkout time anyway |
+| CCR-W4-R2-7 | WS2 | After a scan, write `stores.checkout_connector = resolveCheckoutConnector(store)` (import from `@/features/checkout/connectors`). A `dom_recipe` counts as "usable" when it has `add_to_cart` and one of `cart_link` / `checkout_link`; please fill `verified_at` when the DOM probe clicked through. | Honest `checkout_methods` display; browser connector input | WS4 resolves at checkout time anyway |
 | CCR-W4-R2-8 | WS1 (packages, stretch only) | When S5 starts: `npm i playwright-core @browserbasehq/stagehand@4.1.0` in one commit. | Browser connector | S5 is cut |
 
 ---
@@ -2061,7 +2061,7 @@ set -a; . ./.env.local; set +a
 |---|---|---|
 | The SPT test helper works on our account without extra preview enablement | M0 A1 | `STRIPE_SPT_MODE=fallback` (`pm_card_visa`) |
 | PI create with `payment_method_data[shared_payment_granted_token]` + `automatic_payment_methods{allow_redirects:never}` | M0 A2 | Drop `automatic_payment_methods`, or add `return_url` |
-| `McpServer` type from `@/lib/mcp/types` matches mcp-handler 2.2.0 | M1b | `import type { McpServer } from "@modelcontextprotocol/server"` |
+| `McpServer` type from `@/infrastructure/mcp/types` matches mcp-handler 2.2.0 | M1b | `import type { McpServer } from "@modelcontextprotocol/server"` |
 | `z.union` of line-item shapes renders as usable JSON Schema (`anyOf`) in Claude/Inspector | M1b | Accept `item` only through a `z.preprocess` that maps it to `variant_id` before validation |
 | Store API: add-item with a bare variation id; exact stock error codes | M2 | Send the `variation` array; regex on codes |
 | Store API `expected_total` on `POST /checkout` | M3b | Our own GET /cart drift check (always on) |

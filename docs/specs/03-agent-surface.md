@@ -118,9 +118,9 @@ src/features/catalog/scan-info.ts    scanInfo(store): optional scan grade / best
 
 ### 1.4 What WS3 consumes
 
-**Contracts** (`@/lib/contracts`, 00 §6): `Money, Platform, CheckoutConnectorId, PaymentRailId, AgentSurface, UCP_VERSION, UCP_SUPPORTED_VERSIONS, ACP_VERSION, PAYMENT_HANDLER_IDS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, LOOKUP_MAX_IDS, LIST_STORES_MAX_LIMIT, PRODUCTS_JSON_DEFAULT_LIMIT, PRODUCTS_JSON_MAX_LIMIT, Offer, IndexedVariant, IndexedProduct, ProductSummary, SearchParams, SearchResult, Store, StoreSummary, StoreRef, CrawlRun, ReadinessGrade, ToolResult, UcpMetaSchema, ListStoresInputSchema, SearchCatalogInputSchema, LookupCatalogInputSchema, GetProductInputSchema, ApiErrorCode`, and from `src/contracts/scan.ts` (DECISIONS §A): `ScanReport, AccessMethod`.
+**Contracts** (`@/contracts`, 00 §6): `Money, Platform, CheckoutConnectorId, PaymentRailId, AgentSurface, UCP_VERSION, UCP_SUPPORTED_VERSIONS, ACP_VERSION, PAYMENT_HANDLER_IDS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, LOOKUP_MAX_IDS, LIST_STORES_MAX_LIMIT, PRODUCTS_JSON_DEFAULT_LIMIT, PRODUCTS_JSON_MAX_LIMIT, Offer, IndexedVariant, IndexedProduct, ProductSummary, SearchParams, SearchResult, Store, StoreSummary, StoreRef, CrawlRun, ReadinessGrade, ToolResult, UcpMetaSchema, ListStoresInputSchema, SearchCatalogInputSchema, LookupCatalogInputSchema, GetProductInputSchema, ApiErrorCode`, and from `src/contracts/scan.ts` (DECISIONS §A): `ScanReport, AccessMethod`.
 
-**DB helpers** (`@/lib/db`, 00 §6.10 + DECISIONS B12). Behavior per 01 §6.3:
+**DB helpers** (`@/infrastructure/database`, 00 §6.10 + DECISIONS B12). Behavior per 01 §6.3:
 
 | Helper | WS3 uses it for |
 |---|---|
@@ -145,15 +145,15 @@ src/features/catalog/scan-info.ts    scanInfo(store): optional scan grade / best
 - `src/shared/env.ts`: `appUrl()`, `optionalEnv`.
 - `src/shared/money.ts`: `fromMinor` gives the Shopify `"25.00"` form; `acpPrice` gives `"25.00 USD"`; `formatMoney` is for display.
 
-**WS2** (`@/lib/crawl`):
+**WS2** (`@/features/crawl`):
 - `verifyOffer(variantId): Promise<Offer>` (`VerifyOfferFn`, 00 §6.7): a live re-check with an 8 s timeout that persists the new offer.
-- `registerCrawlTools` from `@/lib/crawl/mcp-tools`.
+- `registerCrawlTools` from `@/features/crawl/mcp-tools`.
 
 WS1's T+30 stubs throw `AppError("not_implemented")` or register nothing, so WS3 can import both from day one.
 
 **WS4:**
-- `registerCheckoutTools` from `@/lib/checkout/mcp-tools`;
-- `resolveCheckoutConnector(store)` from `@/lib/checkout/connectors`, the source of agent-checkout status (B10);
+- `registerCheckoutTools` from `@/features/checkout/mcp-tools`;
+- `resolveCheckoutConnector(store)` from `@/features/checkout/connectors`, the source of agent-checkout status (B10);
 - WS1's T+30 stub exists for `mcp-tools`.
 
 ---
@@ -206,12 +206,12 @@ WS1's T+30 stubs throw `AppError("not_implemented")` or register nothing, so WS3
 
 ```ts
 import { createMcpHandler } from "mcp-handler";
-import { registerCatalogTools } from "@/lib/mcp/tools/catalog";     // WS3
-import { registerCrawlTools } from "@/lib/crawl/mcp-tools";         // WS2: index_store, get_crawl_status, scan_store, get_scan
-import { registerCheckoutTools } from "@/lib/checkout/mcp-tools";   // WS4: 5 checkout tools + get_order
-import { instrumentServer } from "@/lib/mcp/instrument";            // WS3: rate limit + agent_requests for every tool
-import { MCP_INSTRUCTIONS } from "@/lib/mcp/instructions";
-import { mcpPreflight, withCors } from "@/lib/agent/http";
+import { registerCatalogTools } from "@/infrastructure/mcp/tools/catalog";     // WS3
+import { registerCrawlTools } from "@/features/crawl/mcp-tools";         // WS2: index_store, get_crawl_status, scan_store, get_scan
+import { registerCheckoutTools } from "@/features/checkout/mcp-tools";   // WS4: 5 checkout tools + get_order
+import { instrumentServer } from "@/infrastructure/mcp/instrument";            // WS3: rate limit + agent_requests for every tool
+import { MCP_INSTRUCTIONS } from "@/infrastructure/mcp/instructions";
+import { mcpPreflight, withCors } from "@/features/catalog/http";
 
 export const maxDuration = 300; // B8: crawl/scan tools schedule work with after()
 
@@ -265,9 +265,9 @@ export function mcpPreflight(): Response {
 ```ts
 import type { McpServer } from "./types";
 import { toolError } from "./result";
-import { AppError } from "@/lib/errors";
-import { logHit } from "@/lib/agent/log";
-import { rateLimit } from "@/lib/agent/ratelimit";
+import { AppError } from "@/shared/errors";
+import { logHit } from "@/features/catalog/log";
+import { rateLimit } from "@/features/catalog/ratelimit";
 
 const EXPENSIVE = new Set(["index_store", "scan_store"]);   // start crawls / browser sessions
 
@@ -309,9 +309,9 @@ export function instrumentServer(server: McpServer): McpServer {
 ### 3.4 Catalog registrar skeleton (`src/infrastructure/mcp/tools/catalog.ts`)
 
 ```ts
-import type { ToolRegistrar } from "@/lib/mcp/types";
-import { toolError, toolResult } from "@/lib/mcp/result";
-import { GetProductInputSchema, ListStoresInputSchema, LookupCatalogInputSchema, SearchCatalogInputSchema } from "@/lib/contracts";
+import type { ToolRegistrar } from "@/infrastructure/mcp/types";
+import { toolError, toolResult } from "@/infrastructure/mcp/result";
+import { GetProductInputSchema, ListStoresInputSchema, LookupCatalogInputSchema, SearchCatalogInputSchema } from "@/contracts";
 import { DESCRIPTIONS } from "./catalog-descriptions";   // §4 strings; optional split file
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -593,8 +593,8 @@ WS3 must not register any of these names; a duplicate name throws at startup. Be
 This is the single switch read by the profiles, llms.txt and openapi:
 
 ```ts
-import type { PaymentRailId, Store } from "@/lib/contracts";
-import { resolveCheckoutConnector } from "@/lib/checkout/connectors";   // B10
+import type { PaymentRailId, Store } from "@/contracts";
+import { resolveCheckoutConnector } from "@/features/checkout/connectors";   // B10
 
 /** WS3 flips this to true once WS4's MCP checkout milestone (04 M6) passes end to end. */
 export const CHECKOUT_TOOLS_LIVE = false;
@@ -998,7 +998,7 @@ Prices are integers in ISO 4217 minor units: {"amount": 2500, "currency": "USD"}
 `buildUcpProfile({ base, store?: Store, version = UCP_VERSION })` in `src/features/catalog/formats/ucp.ts`. Structure mirrors the live Shopify profile (VERIFIED): top-level `ucp` with `version`, `supported_versions`, `services["dev.ucp.shopping"][]`, `capabilities{}`, `payment_handlers{}`. No `signing_keys` (Shopify serves none either).
 
 ```ts
-import { UCP_SUPPORTED_VERSIONS, UCP_VERSION } from "@/lib/contracts";   // ["2026-08-25", "2026-04-08"]
+import { UCP_SUPPORTED_VERSIONS, UCP_VERSION } from "@/contracts";   // ["2026-08-25", "2026-04-08"]
 const OLDER_VERSIONS = UCP_SUPPORTED_VERSIONS.filter((v) => v !== UCP_VERSION);   // served at /.well-known/ucp/{version}
 const spec = (v: string, path: string) => `https://ucp.dev/${v}/${path}`;
 ```
@@ -1201,9 +1201,9 @@ The response body **is a `Store`** (WS5 reads it as `Store` in its polling fallb
 
 ```ts
 import { after } from "next/server";
-import { logAgentRequest } from "@/lib/db";
-import { log } from "@/lib/log";
-import type { AgentSurface } from "@/lib/contracts";
+import { logAgentRequest } from "@/infrastructure/database";
+import { log } from "@/shared/log";
+import type { AgentSurface } from "@/contracts";
 
 export function logHit(surface: AgentSurface, o: { tool?: string; storeId?: string | null; req?: Request | null; agentProfile?: string | null } = {}) {
   const run = () => logAgentRequest({

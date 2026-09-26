@@ -10,6 +10,7 @@ The application uses one Next.js project. Routes stay in `src/app`; business log
 | Checkout UI in route folders | `src/features/checkout/components` |
 | `src/lib/payments` | `src/features/checkout/payments` |
 | `src/lib/crawl`, `src/lib/scan` | `src/features/crawl`, `src/features/scan` |
+| `src/lib/agent`, `src/lib/formats` | `src/features/catalog`, `src/features/catalog/formats` |
 | `src/lib/contracts` | `src/contracts` |
 | `src/lib/db` | `src/infrastructure/database` |
 | `src/lib/supabase` | `src/infrastructure/supabase` |
