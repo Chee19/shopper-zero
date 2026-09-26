@@ -1,6 +1,9 @@
 import "server-only";
 import type { Platform, PlatformAdapter } from "@/lib/contracts";
+import { magento } from "./magento";
+import { sfcc } from "./sfcc";
+import { shopify } from "./shopify";
+import { squarespace } from "./squarespace";
 import { woocommerce } from "./woocommerce";
 
-// magento, squarespace, sfcc and shopify land with M5.
-export const adapters: Partial<Record<Platform, PlatformAdapter>> = { woocommerce };
+export const adapters: Partial<Record<Platform, PlatformAdapter>> = { woocommerce, magento, squarespace, sfcc, shopify };
