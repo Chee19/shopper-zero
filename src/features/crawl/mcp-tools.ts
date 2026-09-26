@@ -1,10 +1,9 @@
-// src/lib/crawl/mcp-tools.ts: WS2 registers index_store, get_crawl_status, scan_store, get_scan here.
+// src/features/crawl/mcp-tools.ts: WS2 registers index_store, get_crawl_status, scan_store, get_scan here.
 import "server-only";
 import {
   GetCrawlStatusInputSchema, GetScanInputSchema, IndexStoreInputSchema, ScanStoreInputSchema, type ScanReport,
 } from "@/contracts";
-import { startStoreCrawl } from "@/features/crawl";
-import { getCrawlRun, getStoreById } from "@/infrastructure/database";
+import { getCrawlRunView, startStoreCrawl } from "@/features/crawl";
 import { AppError } from "@/shared/errors";
 import { toolError, toolResult } from "@/infrastructure/mcp/result";
 import type { ToolRegistrar } from "@/infrastructure/mcp/types";
@@ -42,10 +41,9 @@ export const registerCrawlTools: ToolRegistrar = (server) => {
     annotations: { readOnlyHint: true },
   }, async (args) => {
     try {
-      const run = await getCrawlRun(args.crawl_run_id);
+      const run = await getCrawlRunView(args.crawl_run_id);
       if (!run) throw new AppError("not_found", "Crawl run not found");
-      const store = await getStoreById(run.store_id);
-      const slug = store?.slug ?? run.store_id;
+      const slug = run.store?.slug ?? run.store_id;
       const summary = run.status === "succeeded"
         ? `Search it: search_catalog with catalog.store = "${slug}".`
         : run.status === "failed"

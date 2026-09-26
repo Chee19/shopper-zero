@@ -16,6 +16,9 @@ export interface BrowserHandle {
 
 export const VIEWPORT = { width: 1280, height: 800 };
 
+// connectOverCDP errors echo the connect URL, whose query carries the Browserbase signingKey.
+export const redactUrlQueries = (msg: string): string => msg.replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#"'<>]*)[?#][^\s"'<>]*/gi, "$1");
+
 async function launch(): Promise<{ browser: Browser; provider: BrowserHandle["provider"] } | null> {
   const apiKey = optionalEnv("BROWSERBASE_API_KEY");
   const projectId = optionalEnv("BROWSERBASE_PROJECT_ID");
@@ -54,7 +57,7 @@ export async function openBrowser(opts: GuardOptions): Promise<BrowserHandle | n
       close: () => browser.close().catch(() => {}),
     };
   } catch (e) {
-    log.warn("scan.browser.open_failed", { provider: launched?.provider, err: e instanceof Error ? e.message : String(e) });
+    log.warn("scan.browser.open_failed", { provider: launched?.provider, err: redactUrlQueries(e instanceof Error ? e.message : String(e)) });
     await launched?.browser.close().catch(() => {});
     return null;
   }

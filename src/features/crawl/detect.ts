@@ -5,6 +5,7 @@ import { adapters } from "./adapters";
 import { wooApiBases, wooUrl } from "./adapters/woocommerce";
 import type { BlockReason, Fetcher } from "./fetch";
 import { isType, parseJsonLdNodes } from "./jsonld";
+import { loadRobots } from "./robots";
 import type { StoreTarget } from "./url";
 
 type Hint = "shopware" | "opencart" | "ecwid";
@@ -117,6 +118,12 @@ export async function detectPlatform(fetcher: Fetcher, target: StoreTarget): Pro
   if (final.origin !== target.origin) {
     target.baseUrl = final.origin + target.baseUrl.slice(target.origin.length);
     target.origin = final.origin;
+    // robots.txt is per origin: the loaded file does not govern (or throttle) the new host, so load its own.
+    if (fetcher.robots) {
+      const robots = await loadRobots(fetcher, target.origin);
+      if (robots.blocksUs) return { ...empty, platform: "unknown", confidence: 0, homepage, blocked: robots.blocksUs, signals: [`blocked:${robots.blocksUs}`] };
+      if (!robots.isAllowed(home.finalUrl)) return { ...empty, platform: "unknown", confidence: 0, homepage, blocked: "robots", signals: ["blocked:robots"] };
+    }
   }
 
   const html = home.body.slice(0, 512_000);

@@ -2,7 +2,7 @@ import "server-only";
 import type { Availability, CrawlContext, Offer, PlatformAdapter } from "@/contracts";
 import { toMinor } from "@/shared/money";
 import { AdapterError } from "../errors";
-import { getJson } from "../fetch";
+import { getJson, getText } from "../fetch";
 import { finalizeProduct, type DraftProduct, type DraftVariant } from "../normalize";
 
 const PAGE_SIZE = 250;
@@ -23,13 +23,34 @@ interface ShopifyProduct {
 }
 interface ProductsResponse { products: ShopifyProduct[] }
 
-async function resolveCurrency(ctx: CrawlContext): Promise<string | null> {
+// Currency declared in page markup: microdata, OpenGraph product tags or JSON-LD.
+const MARKUP_CURRENCY_RES = [
+  /itemprop=["']priceCurrency["']\s+content=["']([A-Z]{3})["']/i,
+  /property=["'](?:og|product):price:currency["']\s+content=["']([A-Z]{3})["']/i,
+  /"priceCurrency"\s*:\s*"([A-Z]{3})"/,
+];
+const markupCurrency = (html: string): string | null => {
+  for (const re of MARKUP_CURRENCY_RES) {
+    const m = re.exec(html)?.[1];
+    if (m) return m.toUpperCase();
+  }
+  return null;
+};
+
+/**
+ * Real Shopify stores expose Shopify.currency or /cart.js. Stores that only publish a Shopify-compatible
+ * products.json (non-Shopify stores made agent-ready) declare it on product pages, so probe one of those.
+ */
+async function resolveCurrency(ctx: CrawlContext, productPageUrl?: string): Promise<string | null> {
   const fromHomepage = CURRENCY_HTML_RE.exec(ctx.homepageHtml)?.[1];
   if (fromHomepage) return fromHomepage;
   const cart = await getJson<{ currency?: string }>(ctx, `${ctx.baseUrl}/cart.js`);
   if (cart.ok && cart.data?.currency && /^[A-Z]{3}$/.test(cart.data.currency)) return cart.data.currency;
-  const meta = /itemprop=["']priceCurrency["']\s+content=["']([A-Z]{3})["']/i.exec(ctx.homepageHtml)?.[1];
-  return meta ?? null;
+  const home = markupCurrency(ctx.homepageHtml);
+  if (home) return home;
+  if (!productPageUrl) return null;
+  const page = await getText(ctx, productPageUrl);
+  return page.ok ? markupCurrency(page.body) : null;
 }
 
 const tagsOf = (t: ShopifyProduct["tags"]): string[] =>
@@ -96,8 +117,7 @@ export const shopify: PlatformAdapter = {
   },
 
   async *listProducts(ctx, { max }) {
-    const currency = await resolveCurrency(ctx);
-    if (!currency) throw new AdapterError("no_currency", "shopify");
+    let currency: string | null = null;
     let emitted = 0;
     for (let page = 1; page <= MAX_PAGES && emitted < max && !ctx.signal?.aborted; page++) {
       const checkedAt = new Date().toISOString();
@@ -108,6 +128,11 @@ export const shopify: PlatformAdapter = {
         break;
       }
       if (!r.data.products.length) break;
+      if (!currency) {
+        const first = r.data.products[0];
+        currency = await resolveCurrency(ctx, first?.handle ? `${ctx.baseUrl}/products/${first.handle}` : undefined);
+        if (!currency) throw new AdapterError("no_currency", "shopify");
+      }
       let invalid = 0;
       for (const p of r.data.products) {
         if (emitted >= max) break;
@@ -124,7 +149,7 @@ export const shopify: PlatformAdapter = {
   },
 
   async fetchOffer(ctx, product, variantExternalId): Promise<Offer> {
-    const currency = await resolveCurrency(ctx);
+    const currency = await resolveCurrency(ctx, product.url);
     if (!currency) throw new AdapterError("no_currency", "shopify");
     const r = await getJson<{ variants: (ShopifyVariant & { price: number })[] }>(ctx, `${product.url}.js`);
     if (!r.ok || !r.data) throw new AdapterError("unavailable", "shopify", r.status);

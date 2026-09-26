@@ -3,7 +3,7 @@ import * as cheerio from "cheerio";
 import type { Capabilities, Platform, ProbeSignal } from "@/contracts";
 import { NO_CAPABILITIES } from "@/contracts";
 import { wooApiBases, wooUrl } from "@/features/crawl/adapters/woocommerce";
-import { ROBOTS_TOKEN, type FetchKind, type FetchResult } from "@/features/crawl/fetch";
+import { readBodyCapped, ROBOTS_TOKEN, type FetchKind, type FetchResult } from "@/features/crawl/fetch";
 import { parseSitemap } from "@/features/crawl/sitemap";
 import { assertPublicHost } from "@/features/crawl/url";
 import { flags } from "@/shared/env";
@@ -186,8 +186,8 @@ async function mcpToolsList(endpoint: string, userAgent: string): Promise<{ tool
 async function readRpc(res: Response, id: number): Promise<unknown> {
   if (!res.body) return null;
   if (!(res.headers.get("content-type") ?? "").includes("text/event-stream")) {
-    const text = await res.text();
-    return text.length > MAX_RPC_CHARS ? null : parseJson(text);
+    const buf = await readBodyCapped(res, MAX_RPC_CHARS);
+    return buf ? parseJson(new TextDecoder().decode(buf)) : null;
   }
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   const match = (event: string) => {

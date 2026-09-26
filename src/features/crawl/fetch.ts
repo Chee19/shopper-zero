@@ -1,4 +1,5 @@
 import "server-only";
+import { gunzipSync } from "node:zlib";
 import PQueue from "p-queue";
 import type { CrawlContext } from "@/contracts";
 import { flags, optionalEnv } from "@/shared/env";
@@ -40,6 +41,8 @@ const TIMEOUT_MS: Record<FetchKind, number> = { html: 15_000, json: 20_000, xml:
 const MAX_BYTES: Record<FetchKind, number> = { html: 3_000_000, json: 3_000_000, text: 3_000_000, xml: 12_000_000 };
 const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_REDIRECTS = 5;
+// A robots.txt Crawl-delay above this cannot fit a crawl budget; the host is treated as blocked (robots.ts) or throttled here.
+export const MAX_CRAWL_DELAY_SEC = 10;
 
 // ---------- challenge detection ----------
 // Only ever served on challenge/block pages.
@@ -70,7 +73,7 @@ function weakMeansChallenge(status: number, bodyLength: number): boolean {
 }
 
 // ---------- fetcher ----------
-interface HostState { q: PQueue; key: string; rps: number; concurrency: number; throttled: number }
+interface HostState { q: PQueue; key: string; rps: number; concurrency: number; throttled: number; delay: number | null }
 interface Attempt { status: number; headers: Headers; body: string; finalUrl: string; blocked?: BlockReason }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -85,10 +88,33 @@ function backoffMs(attempt: number, retryAfter: string | null): number {
   return 750 * 2 ** attempt + Math.random() * 250;
 }
 
-async function decodeBody(buf: Uint8Array, contentType: string | null): Promise<string> {
+// Reads the (already Content-Encoding-decoded) body, cancelling once it passes max bytes. null = too large.
+export async function readBodyCapped(res: Response, max: number): Promise<Uint8Array | null> {
+  if (!res.body) return new Uint8Array();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return Buffer.concat(chunks);
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+}
+
+// Raw .gz bodies (sitemaps) inflate under the same byte cap. null = too large.
+function decodeBody(buf: Uint8Array, contentType: string | null, max: number): string | null {
   if (buf[0] === 0x1f && buf[1] === 0x8b) {
-    const stream = new Blob([buf as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
-    return new Response(stream).text();
+    try {
+      return gunzipSync(buf, { maxOutputLength: max }).toString("utf8");
+    } catch (e) {
+      if ((e as { code?: string }).code === "ERR_BUFFER_TOO_LARGE" || e instanceof RangeError) return null;
+      throw e;
+    }
   }
   const label = /charset=["']?([\w-]+)/i.exec(contentType ?? "")?.[1];
   try {
@@ -116,11 +142,12 @@ export function createFetcher(opts: {
     let s = hosts.get(host);
     if (!s) {
       const fast = host === wooHost;
-      s = { q: new PQueue(), key: "", rps: fast ? 4 : opts.perSecond ?? 2, concurrency: fast ? 4 : opts.concurrency ?? 2, throttled: 0 };
+      s = { q: new PQueue(), key: "", rps: fast ? 4 : opts.perSecond ?? 2, concurrency: fast ? 4 : opts.concurrency ?? 2, throttled: 0, delay: null };
       hosts.set(host, s);
     }
     const robots = fetcher.robots;
     const delay = robots && hostOf(robots.url) === host ? robots.crawlDelaySec : null;
+    s.delay = delay;
     const key = delay ? `delay:${delay}` : `rps:${s.rps}`;
     // ponytail: swapping queues lets in-flight tasks of the old queue finish unthrottled; fine at 2 rps.
     if (s.key !== key) {
@@ -165,9 +192,10 @@ export function createFetcher(opts: {
         await res.body?.cancel();
         return tooLarge;
       }
-      const buf = new Uint8Array(await res.arrayBuffer());
-      if (buf.byteLength > MAX_BYTES[kind]) return tooLarge;
-      return { status: res.status, headers: res.headers, body: await decodeBody(buf, res.headers.get("content-type")), finalUrl: current };
+      const buf = await readBodyCapped(res, MAX_BYTES[kind]);
+      const body = buf && decodeBody(buf, res.headers.get("content-type"), MAX_BYTES[kind]);
+      if (body === null) return tooLarge;
+      return { status: res.status, headers: res.headers, body, finalUrl: current };
     }
     return { status: 0, headers: new Headers(), body: "", finalUrl: current, blocked: "network" };
   }
@@ -206,9 +234,12 @@ export function createFetcher(opts: {
     for (let attempt = 0; ; attempt++) {
       if (Date.now() > deadline - 2000) return finish({ blocked: "deadline" });
       const host = queueFor(u.host);
+      if ((host.delay ?? 0) > MAX_CRAWL_DELAY_SEC) return finish({ blocked: "rate_limited" });
       let a: Attempt;
       try {
         a = (await host.q.add(() => {
+          // A Crawl-delay queue can hold this task past the deadline.
+          if (Date.now() > deadline - 2000) return Promise.resolve<Attempt>({ status: 0, headers: new Headers(), body: "", finalUrl: url, blocked: "deadline" });
           attemptStarted = Date.now();
           return once(url, kind, o);
         }))!;

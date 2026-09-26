@@ -2,8 +2,8 @@ import "server-only";
 import { after } from "next/server";
 import type { ScanReport, StartStoreCrawlFn, Store } from "@/contracts";
 import {
-  countActiveCrawlRuns, createCrawlRun, getActiveCrawlRun, getLatestCrawlRun, getLatestScanForStore, getStoreById,
-  updateStore, upsertStoreForUrl,
+  countActiveCrawlRuns, createCrawlRun, getActiveCrawlRun, getLatestCrawlRun, getLatestScanForStore, getStoreByDomain,
+  getStoreById, updateStore, upsertStoreForUrl,
 } from "@/infrastructure/database";
 import { flags, optionalEnv } from "@/shared/env";
 import { AppError } from "@/shared/errors";
@@ -25,24 +25,28 @@ const SIGNAL_ADAPTERS: [string, PreferredAdapter][] = [
 
 // 02 section 5.11: must run inside a request scope because of after().
 export const startStoreCrawl: StartStoreCrawlFn = async (rawUrl, opts = {}) => {
-  const store = await resolveStore(rawUrl, opts.storeId);
-  if (store.opted_out) {
-    throw new AppError("forbidden", "The merchant has opted out of ShoperZero.", { reason: "opted_out" });
+  // A new store row is only inserted once the crawl is accepted, so rejected requests leave nothing behind.
+  const existing = await findStore(rawUrl, opts.storeId);
+  if (existing?.opted_out) throw optedOut();
+
+  if (existing) {
+    // Reused even with force, so a double click never starts two crawls.
+    const active = await getActiveCrawlRun(existing.id, ACTIVE_WINDOW_MIN);
+    if (active) return { store: existing, crawl_run: active, reused: true, cached: true };
+    if (!opts.force && recentlyCrawled(existing)) {
+      const latest = await getLatestCrawlRun(existing.id);
+      if (latest) return { store: existing, crawl_run: latest, reused: false, cached: true };
+    }
   }
 
-  // Reused even with force, so a double click never starts two crawls.
-  const active = await getActiveCrawlRun(store.id, ACTIVE_WINDOW_MIN);
-  if (active) return { store, crawl_run: active, reused: true, cached: true };
-  if (!opts.force && recentlyCrawled(store)) {
-    const latest = await getLatestCrawlRun(store.id);
-    if (latest) return { store, crawl_run: latest, reused: false, cached: true };
-  }
-
-  const preferred = await preferredStrategy(store, opts.force ?? false);
+  // A store without a row has no scan yet, so no preferred strategy.
+  const preferred = existing ? await preferredStrategy(existing, opts.force ?? false) : null;
   const maxRuns = Number(optionalEnv("CRAWL_MAX_CONCURRENT_RUNS") ?? 3) || 3;
   if ((await countActiveCrawlRuns(ACTIVE_WINDOW_MIN)) >= maxRuns) {
     throw new AppError("rate_limited", "Too many crawls running; retry in 30 s.");
   }
+  const store = existing ?? (await upsertStoreForUrl(rawUrl)).store;
+  if (store.opted_out) throw optedOut();
 
   const run = await createCrawlRun(store.id);
   // Scheduled before the status write so a failed write cannot strand a queued run.
@@ -53,21 +57,24 @@ export const startStoreCrawl: StartStoreCrawlFn = async (rawUrl, opts = {}) => {
   return { store: fresh, crawl_run: run, reused: false, cached: false };
 };
 
-async function resolveStore(rawUrl: string, storeId: string | undefined): Promise<Store> {
+const optedOut = () => new AppError("forbidden", "The merchant has opted out of ShoperZero.", { reason: "opted_out" });
+
+// null: a valid public URL with no store row yet.
+async function findStore(rawUrl: string, storeId: string | undefined): Promise<Store | null> {
   if (storeId) {
     const store = await getStoreById(storeId);
     if (!store) throw new AppError("not_found", "Store not found");
     return store;
   }
   const allowPrivate = flags.allowPrivateStoreHosts();
-  let baseUrl: string;
+  let normalized: { base_url: string; domain: string };
   try {
-    baseUrl = normalizeStoreUrl(rawUrl, { allowPrivate }).base_url;
+    normalized = normalizeStoreUrl(rawUrl, { allowPrivate });
   } catch {
     throw new AppError("validation_error", "Not a valid store URL", { reason: "invalid_url" });
   }
-  await assertPublicHost(baseUrl, allowPrivate);
-  return (await upsertStoreForUrl(rawUrl)).store;
+  await assertPublicHost(normalized.base_url, allowPrivate);
+  return getStoreByDomain(normalized.domain);
 }
 
 function recentlyCrawled(store: Store): boolean {

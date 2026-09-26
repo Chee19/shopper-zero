@@ -90,8 +90,10 @@ async function setup(s: ScanState, opts: RunScanOpts): Promise<ScanEnv> {
   save(s, { probes: ACCESS_METHODS.map((m) => emptyProbe(m)) });
   const target = storeTarget(store);
   const fetcher = createFetcher({ deadline });
-  const robots = await loadRobots(fetcher, target.origin);
+  await loadRobots(fetcher, target.origin);
   const detection = await detectPlatform(fetcher, target);
+  // detectPlatform reloads robots.txt when the homepage redirected to another origin.
+  const robots = fetcher.robots!;
   if (detection.platform !== "unknown") {
     save(s, { platform: detection.platform });
     if (store.platform === "unknown") await updateStore(store.id, { platform: detection.platform });
@@ -106,7 +108,7 @@ async function setup(s: ScanState, opts: RunScanOpts): Promise<ScanEnv> {
 
 function blockCode({ robots, detection }: ScanEnv): BlockCode | null {
   if (robots.blocksUs) return robots.blocksUs;
-  if (detection.blocked === "robots") return "robots";
+  if (detection.blocked === "robots" || detection.blocked === "content_signal") return detection.blocked;
   if (detection.blocked === "challenge" || detection.blocked === "forbidden") return "challenge";
   return null;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { after, before, test } from "node:test";
-import { gzipSync } from "node:zlib";
+import { createGzip, gzipSync } from "node:zlib";
 import { AppError } from "@/shared/errors";
 import { createFetcher, detectChallenge } from "@/features/crawl/fetch";
 
@@ -33,6 +33,8 @@ test("detectChallenge: weak markers on an error page are a challenge", () => {
 });
 
 let server: Server;
+let bombClosed = false;
+const RAW_BOMB = gzipSync(Buffer.alloc(13_000_000)); // ~13 KB on the wire, past the 12 MB xml cap once inflated
 let base = "";
 const hits: Record<string, number> = {};
 before(async () => {
@@ -51,6 +53,18 @@ before(async () => {
     if (path === "/big") return res.end("x".repeat(3_100_000));
     if (path === "/gz") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end(gzipSync("<urlset/>")); }
     if (path === "/latin1") { res.writeHead(200, { "content-type": "text/html; charset=windows-1252" }); return res.end(Buffer.from([0x63, 0x61, 0x66, 0xe9])); }
+    if (path === "/gzip-bomb") {
+      // Content-Encoding: gzip that never ends: only a streaming, decoded-byte cap can stop it.
+      res.writeHead(200, { "content-type": "text/html", "content-encoding": "gzip" });
+      const gz = createGzip();
+      gz.pipe(res);
+      const zeros = Buffer.alloc(1 << 20);
+      let open = true;
+      res.on("close", () => { open = false; bombClosed = true; gz.destroy(); });
+      const pump = () => { while (open && gz.write(zeros)); if (open) gz.once("drain", pump); };
+      return pump();
+    }
+    if (path === "/raw-gz-bomb") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end(RAW_BOMB); }
     if (path === "/json") { res.writeHead(200, { "content-type": "application/json" }); return res.end(`{"a":1}`); }
     res.writeHead(500); res.end();
   });
@@ -115,4 +129,35 @@ test("fetcher: asFetch is GET-only and flags blocks", async () => {
   assert.equal(blocked.status, 403);
   assert.equal(blocked.headers.get("x-shoperzero-blocked"), "forbidden");
   await assert.rejects(doFetch(`${base}/ok`, { method: "POST" }), (e: unknown) => e instanceof AppError && e.code === "bad_request");
+});
+
+test("fetcher: gzip bombs stop at the byte cap instead of buffering", async () => {
+  const f = createFetcher({ allowPrivate: true });
+  const started = Date.now();
+  const bomb = await f.get(`${base}/gzip-bomb`, { timeoutMs: 10_000, retries: 0 });
+  assert.equal(bomb.blocked, "too_large");
+  assert.ok(Date.now() - started < 10_000, "stopped by the cap, not the timeout");
+  for (let i = 0; i < 50 && !bombClosed; i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(bombClosed, true, "the reader cancels the stream");
+
+  const raw = await f.get(`${base}/raw-gz-bomb`, { kind: "xml" });
+  assert.equal(raw.blocked, "too_large");
+  assert.equal(raw.body, "");
+});
+
+test("fetcher: crawl-delay above 10 s throttles; queued tasks re-check the deadline", async () => {
+  const slow = createFetcher({ allowPrivate: true });
+  slow.robots = { url: `${base}/robots.txt`, crawlDelaySec: 30, isAllowed: () => true } as never;
+  const before = hits["/ok"] ?? 0;
+  assert.equal((await slow.get(`${base}/ok`, { noCache: true })).blocked, "rate_limited");
+  assert.equal(hits["/ok"] ?? 0, before);
+
+  // 3 s delay, 4.5 s deadline: the second task leaves the queue after the 2 s deadline margin.
+  const f = createFetcher({ allowPrivate: true, deadline: Date.now() + 4500 });
+  f.robots = { url: `${base}/robots.txt`, crawlDelaySec: 3, isAllowed: () => true } as never;
+  const jsonHits = hits["/json"] ?? 0;
+  const [first, second] = await Promise.all([f.get(`${base}/missing`), f.get(`${base}/json`, { kind: "json" })]);
+  assert.equal(first.status, 404);
+  assert.equal(second.blocked, "deadline");
+  assert.equal(hits["/json"] ?? 0, jsonHits);
 });

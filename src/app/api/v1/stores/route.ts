@@ -3,7 +3,8 @@ import { route, json, parseJsonBody, parseSearchParams, preflight, errorResponse
 import { listStores } from "@/infrastructure/database";
 import { startStoreCrawl } from "@/features/crawl";
 import { PLATFORMS } from "@/contracts";
-import { isAppError } from "@/shared/errors";
+import { AppError, isAppError } from "@/shared/errors";
+import { rateLimit } from "@/features/catalog/ratelimit";
 
 export const maxDuration = 300; // startStoreCrawl schedules the crawl with after()
 export const OPTIONS = preflight;
@@ -36,6 +37,8 @@ const IndexBody = z.union([
 export const POST = route("stores.index", async (req, _ctx, { requestId }) => {
   const body = await parseJsonBody(req, IndexBody);
   try {
+    // Per-IP, force included; shared with MCP scan_store/index_store (5 launches per 10 min).
+    if (!rateLimit(req, "expensive")) throw new AppError("rate_limited", "Too many crawls from this address; retry in a few minutes.", { retry_after: 120 });
     const r = await startStoreCrawl("url" in body ? body.url : "", {
       storeId: "store_id" in body ? body.store_id : undefined,
       maxProducts: body.max_products,
@@ -51,7 +54,7 @@ export const POST = route("stores.index", async (req, _ctx, { requestId }) => {
     // route()'s errorResponse has no headers option; rate_limited needs Retry-After added here.
     if (isAppError(err) && err.code === "rate_limited") {
       const res = errorResponse(err, requestId);
-      res.headers.set("Retry-After", "30");
+      res.headers.set("Retry-After", String((err.details as { retry_after?: number } | undefined)?.retry_after ?? 30));
       return res;
     }
     throw err;

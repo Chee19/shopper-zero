@@ -2,8 +2,8 @@ import "server-only";
 import type {
   CrawlContext, CrawlLogEntry, CrawlStep, DomRecipe, ExtractionSource, NormalizedProduct, Platform, PlatformAdapter, Store,
 } from "@/contracts";
+import { collisionHandle } from "@/infrastructure/database";
 import { flags } from "@/shared/env";
-import { shortHash } from "@/shared/slug";
 import { adapters } from "./adapters";
 import { detectPlatform, type DetectionResult } from "./detect";
 import { AdapterError } from "./errors";
@@ -115,8 +115,10 @@ export async function runPipeline(input: PipelineInput, hooks: PipelineHooks): P
 async function crawl(run: Run): Promise<StopReason> {
   if (timeUp(run)) throw new Stop("time_budget");
   await assertPublicHost(run.target.origin, flags.allowPrivateStoreHosts());
-  const robots = await readRobots(run);
+  const loaded = await readRobots(run);
   const d = await detect(run);
+  // detectPlatform reloads robots.txt when the homepage redirected to another origin.
+  const robots = run.fetcher.robots && run.fetcher.robots !== loaded ? reportRobots(run, run.fetcher.robots) : loaded;
   const adapter = await chooseAdapter(run, d);
   await run.hooks.onDetection?.(d, run.target);
   const stop = adapter ? await drainAdapter(run, adapter, d) : null;
@@ -124,11 +126,14 @@ async function crawl(run: Run): Promise<StopReason> {
 }
 
 async function readRobots(run: Run): Promise<RobotsInfo> {
-  const robots = await loadRobots(run.fetcher, run.target.origin);
+  return reportRobots(run, await loadRobots(run.fetcher, run.target.origin));
+}
+
+function reportRobots(run: Run, robots: RobotsInfo): RobotsInfo {
   const delay = robots.crawlDelaySec ? `, crawl-delay ${robots.crawlDelaySec}s` : "";
   run.hooks.log({
     level: "info", step: "robots", msg: `robots.txt HTTP ${robots.status}${delay}`,
-    data: { crawl_delay: robots.crawlDelaySec, content_signal: robots.contentSignal, sitemaps: robots.sitemaps.length },
+    data: { url: robots.url, crawl_delay: robots.crawlDelaySec, content_signal: robots.contentSignal, sitemaps: robots.sitemaps.length },
   });
   if (robots.blocksUs) throw new Stop("blocked", `blocked:${robots.blocksUs}`);
   return robots;
@@ -138,7 +143,7 @@ async function detect(run: Run): Promise<DetectionResult> {
   const d = await detectPlatform(run.fetcher, run.target);
   run.detection = d;
   if (d.blocked === "deadline") throw new Stop("time_budget");
-  if (d.blocked === "challenge" || d.blocked === "forbidden" || d.blocked === "robots") throw new Stop("blocked", `blocked:${d.blocked}`);
+  if (d.blocked === "challenge" || d.blocked === "forbidden" || d.blocked === "robots" || d.blocked === "content_signal") throw new Stop("blocked", `blocked:${d.blocked}`);
   if (d.blocked) throw new Stop("error", `homepage_${d.blocked}`);
   run.hooks.log({
     level: "info", step: "detect", msg: `Detected ${d.platform}${d.hint ? ` (${d.hint})` : ""}`,
@@ -341,9 +346,9 @@ async function emit(run: Run, product: NormalizedProduct): Promise<void> {
   // The 5 sampled products can exceed a small maxProducts.
   if (full(run)) return;
   const owner = run.handles.get(product.handle);
-  // 246 keeps "-" plus the 8-char hash within the schema's 255-char handle limit.
+  // Same scheme as the DB writer (DECISIONS C10); 248 keeps "-" plus the 6-char hash within the 255-char handle limit.
   const p = owner !== undefined && owner !== product.url
-    ? { ...product, handle: `${product.handle.slice(0, 246)}-${shortHash(product.url)}` }
+    ? { ...product, handle: collisionHandle(product.handle.slice(0, 248), product.url) }
     : product;
   run.handles.set(p.handle, p.url);
   run.emitted.push(p);

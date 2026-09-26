@@ -1,7 +1,7 @@
 import "server-only";
 import robotsParser from "robots-parser";
 import { log } from "@/shared/log";
-import { ROBOTS_TOKEN, type Fetcher } from "./fetch";
+import { MAX_CRAWL_DELAY_SEC, ROBOTS_TOKEN, type Fetcher } from "./fetch";
 
 export interface RobotsInfo {
   url: string; status: number;
@@ -38,8 +38,11 @@ export function parseRobots(url: string, status: number, body: string, origin: s
   const isAllowed = (u: string, ua: string = ROBOTS_TOKEN) => parser.isAllowed(u, ua) !== false;
   const contentSignal = parseContentSignal(body);
   const sitemaps = parser.getSitemaps().flatMap((s) => (URL.canParse(s, url) ? [new URL(s, url).href] : []));
-  const blocksUs = contentSignal?.["ai-input"] === "no" ? "content_signal" : !isAllowed(`${origin}/`) ? "robots" : null;
-  return { url, status, isAllowed, crawlDelaySec: parser.getCrawlDelay(ROBOTS_TOKEN) ?? null, sitemaps, contentSignal, blocksUs };
+  const crawlDelaySec = parser.getCrawlDelay(ROBOTS_TOKEN) ?? null;
+  // A Crawl-delay we cannot honour within the time budget counts as a robots block.
+  const blocksUs = contentSignal?.["ai-input"] === "no" ? "content_signal"
+    : !isAllowed(`${origin}/`) || (crawlDelaySec ?? 0) > MAX_CRAWL_DELAY_SEC ? "robots" : null;
+  return { url, status, isAllowed, crawlDelaySec, sitemaps, contentSignal, blocksUs };
 }
 
 // contentsignals.org lines, which robots-parser ignores: the ShoperZeroBot group wins, else "*".

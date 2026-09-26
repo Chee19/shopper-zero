@@ -16,8 +16,12 @@ const PRIVATE = new BlockList();
 for (const [net, prefix] of [
   ["127.0.0.0", 8], ["10.0.0.0", 8], ["172.16.0.0", 12], ["192.168.0.0", 16],
   ["169.254.0.0", 16], ["100.64.0.0", 10], ["0.0.0.0", 8],
+  ["198.18.0.0", 15], ["224.0.0.0", 4], ["240.0.0.0", 4], // benchmarking, multicast, reserved + broadcast
 ] as const) PRIVATE.addSubnet(net, prefix, "ipv4");
-for (const [net, prefix] of [["::1", 128], ["::", 128], ["fc00::", 7], ["fe80::", 10]] as const) {
+// 64:ff9b::/96 (NAT64) and 2002::/16 (6to4) embed an IPv4 address that may be private.
+for (const [net, prefix] of [
+  ["::1", 128], ["::", 128], ["fc00::", 7], ["fe80::", 10], ["64:ff9b::", 96], ["2002::", 16],
+] as const) {
   PRIVATE.addSubnet(net, prefix, "ipv6");
 }
 
