@@ -1,6 +1,5 @@
 import "server-only";
-import Browserbase from "@browserbasehq/sdk";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import { flags, optionalEnv } from "@/shared/env";
 import { log } from "@/shared/log";
 import { installGuards, type GuardOptions, type GuardState } from "./browser-guard";
@@ -19,18 +18,21 @@ export const VIEWPORT = { width: 1280, height: 800 };
 // connectOverCDP errors echo the connect URL, whose query carries the Browserbase signingKey.
 export const redactUrlQueries = (msg: string): string => msg.replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s?#"'<>]*)[?#][^\s"'<>]*/gi, "$1");
 
+// Browser libraries load on first use: importing playwright-core at module load crashes every route that
+// imports the scan feature when its data files are missing from a serverless bundle.
 async function launch(): Promise<{ browser: Browser; provider: BrowserHandle["provider"] } | null> {
   const apiKey = optionalEnv("BROWSERBASE_API_KEY");
   const projectId = optionalEnv("BROWSERBASE_PROJECT_ID");
+  if (!(apiKey && projectId) && process.env.VERCEL) return null; // no Chromium inside a Vercel function
+  const { chromium } = await import("playwright-core");
   if (apiKey && projectId) {
+    const { default: Browserbase } = await import("@browserbasehq/sdk");
     // Browserbase solves captchas by default; we never bypass bot walls.
     const session = await new Browserbase({ apiKey }).sessions.create({
       projectId, browserSettings: { solveCaptchas: false, viewport: VIEWPORT },
     });
     return { browser: await chromium.connectOverCDP(session.connectUrl, { timeout: 15_000 }), provider: "browserbase" };
   }
-  // Chromium cannot run inside a Vercel function (bundle size, cold start).
-  if (process.env.VERCEL) return null;
   return { browser: await chromium.launch({ headless: true, timeout: 15_000 }), provider: "local" };
 }
 
