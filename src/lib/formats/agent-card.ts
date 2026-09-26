@@ -1,5 +1,7 @@
 // src/lib/formats/agent-card.ts  (WS3; pure)
 // A2A-style discovery card (spec 03 §6.7). We do not run an A2A server; the card points at the MCP endpoint.
+import { MCP_PATH } from "./ucp";
+
 export function buildAgentCard(base: string) {
   return {
     name: "ShoperZero",
@@ -8,8 +10,8 @@ export function buildAgentCard(base: string) {
     version: "0.1.0",
     provider: { organization: "ShoperZero", url: base },
     documentationUrl: `${base}/llms.txt`,
-    supportedInterfaces: [{ url: `${base}/api/mcp`, protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
-    url: `${base}/api/mcp`,
+    supportedInterfaces: [{ url: `${base}${MCP_PATH}`, protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
+    url: `${base}${MCP_PATH}`,
     preferredTransport: "JSONRPC",
     protocolVersion: "0.3.0",
     capabilities: { streaming: false, pushNotifications: false },
