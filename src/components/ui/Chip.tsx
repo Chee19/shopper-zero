@@ -1,4 +1,5 @@
 import type { Tone } from "../lib/format";
+import type { LiveMode } from "../realtime/types";
 import { TONE, cx } from "./tone";
 
 export function StatusDot({ tone = "muted", pulse = false, className }: { tone?: Tone; pulse?: boolean; className?: string }) {
@@ -32,7 +33,10 @@ export function Chip({
   );
 }
 
-export function LivePill({ mode }: { mode?: "connecting" | "live" | "polling" | "replay" }) {
+export function LivePill({ mode }: { mode?: LiveMode }) {
+  if (mode === "paused") {
+    return <Chip tone="muted" dot title="No new events for a while. Click or type anywhere to resume.">Paused</Chip>;
+  }
   if (mode === "polling") {
     return <Chip tone="warn" dot pulse title="Realtime unavailable: polling every 2 s">Live · polling</Chip>;
   }

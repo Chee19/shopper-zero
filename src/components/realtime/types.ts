@@ -1,6 +1,6 @@
 import type { CheckoutEvent, CheckoutSession, CrawlRun, ScanReport, Store } from "../lib/contracts";
 
-export type LiveMode = "connecting" | "live" | "polling" | "replay";
+export type LiveMode = "connecting" | "live" | "polling" | "paused" | "replay";
 
 /** One Realtime-like snapshot. Probes are replaced wholesale per frame. */
 export type ScanReplayFrame = { at_ms: number; scan: Partial<ScanReport> };

@@ -14,7 +14,7 @@ const POLL_MS = 1500;          // an open checkout: rows appear within ~1.5 s
 const FOLLOW_POLL_MS = 2000;   // follow mode: look for a newer checkout
 const LINGER_MS = 3000;        // keep polling after a terminal state for late order/capture rows
 const MAX_BACKOFF_MS = 15_000; // after repeated failures
-const IDLE_STOP_MS = 15 * 60_000; // stop when nothing new has arrived for 15 min
+const IDLE_PAUSE_MS = 15 * 60_000; // a single checkout with no new event for 15 visible minutes pauses until focus
 
 type Feed = { checkoutId: string | null; checkout: PublicCheckout | null; events: CheckoutEvent[] };
 type UiCheckout = { checkout: PublicCheckout | null; events: CheckoutEvent[] };
@@ -79,6 +79,22 @@ export function useCheckoutFeed(opts: {
     if (replay || UI_MOCK) return;
     let stopped = false;
     let terminalAt: number | null = null;
+    let wake: (() => void) | null = null;
+    /** Resolves when the tab regains attention (focus / becomes visible) or the effect is torn down. */
+    const waitForAttention = () =>
+      new Promise<void>((resolve) => {
+        const events = ["focus", "pointerdown", "keydown"] as const; // someone is looking at an already-focused tab
+        const done = () => {
+          for (const e of events) window.removeEventListener(e, done);
+          document.removeEventListener("visibilitychange", onVis);
+          wake = null;
+          resolve();
+        };
+        const onVis = () => { if (document.visibilityState === "visible") done(); };
+        wake = done;
+        for (const e of events) window.addEventListener(e, done);
+        document.addEventListener("visibilitychange", onVis);
+      });
     const set = (next: Feed) => {
       latest.current = next;
       setLive(next);
@@ -114,7 +130,8 @@ export function useCheckoutFeed(opts: {
       while (!stopped) {
         const base = follow ? FOLLOW_POLL_MS : POLL_MS;
         if (document.visibilityState === "hidden") {
-          await new Promise((r) => setTimeout(r, base)); // paused while the tab is hidden
+          lastChange = Date.now(); // hidden time doesn't count as idle
+          await new Promise((r) => setTimeout(r, base)); // no polling while the tab is hidden
           continue;
         }
         const ok = await tick().catch(() => false);
@@ -125,8 +142,13 @@ export function useCheckoutFeed(opts: {
         if (key !== lastKey) {
           lastKey = key;
           lastChange = Date.now();
-        } else if (Date.now() - lastChange > IDLE_STOP_MS) {
-          return;
+        } else if (!follow && Date.now() - lastChange > IDLE_PAUSE_MS) {
+          // Follow mode never idles (the demo tab waits for the next checkout); a stale single checkout pauses
+          // visibly and resumes as soon as someone looks at the tab again.
+          setMode("paused");
+          await waitForAttention();
+          lastChange = Date.now();
+          continue;
         }
         if (!follow && isTerminal(latest.current.events)) {
           terminalAt ??= Date.now();
@@ -138,6 +160,7 @@ export function useCheckoutFeed(opts: {
     void loop();
     return () => {
       stopped = true;
+      wake?.();
     };
   }, [replay, follow, target]);
 

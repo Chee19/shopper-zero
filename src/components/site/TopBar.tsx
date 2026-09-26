@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MCP_PATH } from "@/lib/formats/ucp";
 import { CopyButton } from "../ui/CopyButton";
 
 const LINKS = [
@@ -26,7 +27,7 @@ export function TopBar({ mcpUrl }: { mcpUrl: string }) {
           </a>
         </nav>
         <div className="ml-auto hidden items-center rounded-full border border-line bg-surface pl-3 md:flex">
-          <code className="font-mono text-[12px] text-ink-2" title={mcpUrl}>…{new URL(mcpUrl).pathname}</code>
+          <code className="font-mono text-[12px] text-ink-2" title={mcpUrl}>…{MCP_PATH}</code>
           <CopyButton text={mcpUrl} label="MCP URL" className="[&>span]:sr-only" />
         </div>
       </div>

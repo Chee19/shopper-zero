@@ -81,7 +81,13 @@ export async function checkMeta(host: string, token: string): Promise<CheckResul
   if (!res?.ok) {
     return { method: "meta_tag", ok: false, observed: [], hint: `Couldn't fetch https://${host}/ (${reason ?? res?.status ?? "network error"}).` };
   }
-  const $ = cheerio.load(await readCapped(res, 512_000));
+  let html: string;
+  try {
+    html = await readCapped(res, 512_000);
+  } catch {
+    return { method: "meta_tag", ok: false, observed: [], hint: `Couldn't read https://${host}/ (timeout or connection reset).` };
+  }
+  const $ = cheerio.load(html);
   const observed = $(`meta[name="${META_NAME}"]`).map((_, el) => $(el).attr("content") ?? "").get();
   return observed.includes(token)
     ? { method: "meta_tag", ok: true, observed }
