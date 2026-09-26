@@ -66,8 +66,7 @@ export function detectChallenge(status: number, headers: Headers, body: string):
 // true marks the page blocked: never retried, and it counts toward the circuit breaker.
 // false parses the body as a normal page.
 function weakMeansChallenge(status: number, bodyLength: number): boolean {
-  // TODO(human)
-  return false;
+  return status >= 400 || bodyLength < 15_000;
 }
 
 // ---------- fetcher ----------
