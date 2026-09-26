@@ -44,7 +44,13 @@ async function fetchHome(host: string): Promise<{ res: Response | null; reason?:
     if (res.status < 300 || res.status >= 400) return { res };
     const location = res.headers.get("location");
     if (!location) return { res };
-    const next = new URL(location, url);
+    void res.body?.cancel().catch(() => {}); // release the socket before the next hop
+    let next: URL;
+    try {
+      next = new URL(location, url);
+    } catch {
+      return { res: null, reason: "bad redirect" };
+    }
     if (next.protocol !== "https:" || !sameSite(next.hostname, host)) {
       return { res: null, reason: `redirects off-site to ${next.protocol}//${next.hostname}` };
     }
@@ -53,13 +59,29 @@ async function fetchHome(host: string): Promise<{ res: Response | null; reason?:
   return { res: null, reason: "too many redirects" };
 }
 
+/** Reads at most `max` bytes of the body, then cancels the stream (the page's <head> is near the top). */
+async function readCapped(res: Response, max: number): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (size < max) {
+    const { done, value } = await reader.read();
+    if (done || !value) break;
+    chunks.push(value);
+    size += value.byteLength;
+  }
+  void reader.cancel().catch(() => {});
+  return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, max));
+}
+
 /** <meta name="shoperzero-verify" content="<token>"> on https://<host>/. Only the stored host (or its www/apex) is fetched. */
 export async function checkMeta(host: string, token: string): Promise<CheckResult> {
   const { res, reason } = await fetchHome(host);
   if (!res?.ok) {
     return { method: "meta_tag", ok: false, observed: [], hint: `Couldn't fetch https://${host}/ (${reason ?? res?.status ?? "network error"}).` };
   }
-  const $ = cheerio.load((await res.text()).slice(0, 512_000));
+  const $ = cheerio.load(await readCapped(res, 512_000));
   const observed = $(`meta[name="${META_NAME}"]`).map((_, el) => $(el).attr("content") ?? "").get();
   return observed.includes(token)
     ? { method: "meta_tag", ok: true, observed }

@@ -13,6 +13,8 @@ export const TERMINAL_STATES: CheckoutState[] = ["completed", "failed", "expired
 const POLL_MS = 1500;          // an open checkout: rows appear within ~1.5 s
 const FOLLOW_POLL_MS = 2000;   // follow mode: look for a newer checkout
 const LINGER_MS = 3000;        // keep polling after a terminal state for late order/capture rows
+const MAX_BACKOFF_MS = 15_000; // after repeated failures
+const IDLE_STOP_MS = 15 * 60_000; // stop when nothing new has arrived for 15 min
 
 type Feed = { checkoutId: string | null; checkout: PublicCheckout | null; events: CheckoutEvent[] };
 type UiCheckout = { checkout: PublicCheckout | null; events: CheckoutEvent[] };
@@ -106,14 +108,31 @@ export function useCheckoutFeed(opts: {
     };
 
     const loop = async () => {
+      let failures = 0;
+      let lastChange = Date.now();
+      let lastKey = "";
       while (!stopped) {
+        const base = follow ? FOLLOW_POLL_MS : POLL_MS;
+        if (document.visibilityState === "hidden") {
+          await new Promise((r) => setTimeout(r, base)); // paused while the tab is hidden
+          continue;
+        }
         const ok = await tick().catch(() => false);
-        if (!stopped) setMode(ok ? "live" : "polling");
+        if (stopped) return;
+        setMode(ok ? "live" : "polling");
+        failures = ok ? 0 : failures + 1;
+        const key = `${latest.current.checkoutId}:${latest.current.events.at(-1)?.id ?? 0}`;
+        if (key !== lastKey) {
+          lastKey = key;
+          lastChange = Date.now();
+        } else if (Date.now() - lastChange > IDLE_STOP_MS) {
+          return;
+        }
         if (!follow && isTerminal(latest.current.events)) {
           terminalAt ??= Date.now();
           if (Date.now() - terminalAt > LINGER_MS) return;
         }
-        await new Promise((r) => setTimeout(r, follow ? FOLLOW_POLL_MS : POLL_MS));
+        await new Promise((r) => setTimeout(r, Math.min(MAX_BACKOFF_MS, base * 2 ** failures)));
       }
     };
     void loop();

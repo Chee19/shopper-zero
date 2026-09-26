@@ -41,6 +41,7 @@ export function ClaimFlow({ slug, domain, storeHref }: { slug: string; domain: s
   const [busy, setBusy] = useState<string | null>(null);
   const [checks, setChecks] = useState<Partial<Record<ClaimMethod, CheckResult>>>({});
   const [actionError, setActionError] = useState<string | null>(null);
+  const [failedCheck, setFailedCheck] = useState<CheckResult | null>(null); // last failed re-check (verified views)
   const [confirm, setConfirm] = useState<"rotate" | "opt_out" | null>(null);
   const now = useNow(Boolean(claim?.verified_at), 30_000);
 
@@ -63,13 +64,17 @@ export function ClaimFlow({ slug, domain, storeHref }: { slug: string; domain: s
     setActionError(null);
     const r = await callClaims(slug, action, method);
     setBusy(null);
+    setFailedCheck(null);
     if (r.ok) {
       setClaim(r.data.claim);
       if (r.data.check) setChecks((c) => ({ ...c, [r.data.check!.method]: r.data.check }));
       if (action === "rotate") setChecks({});
       return;
     }
-    if (r.fail.check) setChecks((c) => ({ ...c, [r.fail.check!.method]: r.fail.check }));
+    if (r.fail.check) {
+      setChecks((c) => ({ ...c, [r.fail.check!.method]: r.fail.check }));
+      setFailedCheck(r.fail.check);
+    }
     setActionError(r.fail.status === 403 ? "We couldn't re-verify your domain, so nothing changed." : r.fail.message);
   }
 
@@ -99,7 +104,7 @@ export function ClaimFlow({ slug, domain, storeHref }: { slug: string; domain: s
     >
       <p className="text-[14px] text-ink-2">
         {confirm === "rotate"
-          ? "The current token stops working and the store becomes unverified until you publish the new one."
+          ? "The current token stops working. Publish the new one before you verify."
           : "Agents will no longer see this store's products. You can opt back in at any time."}
       </p>
       <div className="mt-4 flex justify-end gap-2">
@@ -117,7 +122,18 @@ export function ClaimFlow({ slug, domain, storeHref }: { slug: string; domain: s
       </div>
     </Dialog>
   );
-  const errorLine = actionError ? <p role="alert" className="text-[14px] text-bad-text">{actionError}</p> : null;
+  const errorLine = actionError ? (
+    <div role="alert" className="text-[14px]">
+      <p className="text-bad-text">{actionError}</p>
+      {claim.status === "verified" && failedCheck ? (
+        <div className="mt-1 text-[13px] text-ink-2">
+          <p>Keep one of these published, then try again:</p>
+          <p className="mt-1">TXT <code className="font-mono">{claim.instructions.dns_txt.host}</code> = <code className="font-mono break-all">{claim.instructions.dns_txt.value}</code></p>
+          <p>or <code className="font-mono break-all">{claim.instructions.meta_tag.html}</code> on {claim.instructions.meta_tag.url}</p>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   if (claim.status === "verified" && claim.opted_out) {
     return (

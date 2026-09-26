@@ -36,7 +36,8 @@ export function IndexingPanel({
   const doRetry = async () => {
     setRetry({ pending: true, error: null });
     const r = await onRetry();
-    setRetry({ pending: false, error: r?.error ?? null });
+    // On success the page navigates to the new ?run= and remounts this panel: stay disabled until then.
+    setRetry({ pending: !r, error: r?.error ?? null });
   };
   const isReplay = Boolean(replayFrames);
   const domain = store.domain || domainOf(scan.url);
@@ -59,7 +60,7 @@ export function IndexingPanel({
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="mr-auto text-[20px] font-semibold tracking-tight">Making {domain} agent-ready</h2>
           {run.strategy ? <Chip tone="muted">{STRATEGY_LABELS[run.strategy] ?? run.strategy}</Chip> : null}
-          <ModePill mode={mode} terminal={run.status === "succeeded" || run.status === "failed"} />
+          <ModePill mode={mode} status={run.status} />
         </div>
 
         <div className="mt-4 grid gap-5 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
@@ -139,9 +140,10 @@ export function IndexingPanel({
   );
 }
 
-function ModePill({ mode, terminal }: { mode: LiveMode; terminal: boolean }) {
+function ModePill({ mode, status }: { mode: LiveMode; status: CrawlRun["status"] }) {
   if (mode === "replay") return <Chip tone="muted">Replay</Chip>;
-  if (terminal) return <Chip tone="good" dot>Done</Chip>;
+  if (status === "failed") return <Chip tone="bad" dot>Failed</Chip>;
+  if (status === "succeeded") return <Chip tone="good" dot>Done</Chip>;
   return <LivePill mode={mode} />;
 }
 
