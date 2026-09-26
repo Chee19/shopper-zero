@@ -14,7 +14,7 @@ import {
   getProductByHandle, getProductsByIds, findProducts, getProductSummaries, getVariantForVerify, updateVariantOffer,
   getActiveScanForStore, countActiveScans, uploadScanScreenshot,
   insertCheckout, getCheckoutRecord, getCheckoutByIdempotencyKey, updateCheckoutRecord, insertCheckoutEvent,
-  listCheckoutEvents, insertOrder, getOrder, getOrderByCheckoutId, updateOrderStatus,
+  listCheckoutEvents, getLatestCheckoutId, insertOrder, getOrder, getOrderByCheckoutId, updateOrderStatus,
   upsertClaim, getOrCreateClaim, getClaim, markClaimVerified, setStoreOptOut,
 } from "../src/lib/db";
 import { isAppError } from "../src/lib/errors";
@@ -260,6 +260,7 @@ async function main() {
     await insertCheckoutEvent({ checkout_id: co.id, from_state: null, to_state: "quoting", message: "created", data: {} });
     await insertCheckoutEvent({ checkout_id: co.id, from_state: "quoting", to_state: "awaiting_payment", message: null, data: { rail: "x402" } });
     assert.deepEqual((await listCheckoutEvents(co.id)).map((e) => e.to_state), ["quoting", "awaiting_payment"]);
+    assert.equal(await getLatestCheckoutId(), co.id);
     // Service-role only: the Data API roles cannot read checkout ids.
     for (const table of ["checkout_events", "checkouts", "orders", "agent_requests", "store_claims"] as const) {
       const { data: leaked, error: denied } = await anon().from(table).select("*").limit(1);

@@ -1669,6 +1669,8 @@ export declare function updateCheckoutRecord(
 ): Promise<CheckoutRecord | null>;
 export declare function insertCheckoutEvent(ev: Omit<CheckoutEvent, "id" | "created_at">): Promise<CheckoutEvent>;
 export declare function listCheckoutEvents(checkoutId: string): Promise<CheckoutEvent[]>;
+/** checkout_id of the newest checkout_events row, or null. Service-role; WS5 /checkouts/live follow mode (C9). */
+export declare function getLatestCheckoutId(): Promise<string | null>;
 export declare function insertOrder(o: Omit<Order, "id" | "created_at">): Promise<Order>;
 export declare function getOrder(id: string): Promise<Order | null>;
 export declare function getOrderByCheckoutId(checkoutId: string): Promise<Order | null>;
