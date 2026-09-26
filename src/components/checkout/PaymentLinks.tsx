@@ -4,8 +4,7 @@ import { Chip } from "../ui/Chip";
 import { CopyButton } from "../ui/CopyButton";
 import { External } from "../ui/icons";
 
-// Stripe test payments only in the MVP (DECISIONS); the contract type still lists the retired rail.
-export const RAIL_LABEL: Record<PaymentRailId, string> = { stripe_spt: "Stripe SPT", x402: "x402" };
+export const RAIL_LABEL: Record<PaymentRailId, string> = { stripe_spt: "Stripe SPT" };
 
 const link = "inline-flex items-center gap-1 text-accent-text hover:underline";
 

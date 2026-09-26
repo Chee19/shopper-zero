@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { claimInstructions, type CheckResult, type ClaimView } from "@/components/claim/types";
-import type { ClaimMethod, Store, StoreClaim } from "@/lib/contracts";
-import { AppError, isAppError } from "@/lib/errors";
-import { json, parseJsonBody, preflight, route } from "@/lib/http";
+import type { ClaimMethod, Store, StoreClaim } from "@/contracts";
+import { AppError, isAppError } from "@/shared/errors";
+import { json, parseJsonBody, preflight, route } from "@/shared/http";
 import { UI_MOCK } from "@/components/lib/flags";
 import { MOCK_CLAIM_TOKEN, mockClaimView } from "@/app/(site)/_lib/mock";
 import { checkDns, checkMeta } from "./_verify";
@@ -50,7 +50,7 @@ export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) =>
   const body = await parseJsonBody(req, ClaimRequest);
   if (UI_MOCK) return json(mockResponse(body), { requestId });
 
-  const db = await import("@/lib/db");
+  const db = await import("@/infrastructure/database");
   const store = await db.getStoreBySlug(body.slug);
   if (!store) throw new AppError("not_found", `No store called ${body.slug}`);
   const host = new URL(store.base_url).hostname; // only the stored host is ever contacted, never user input

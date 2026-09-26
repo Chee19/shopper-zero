@@ -1,9 +1,9 @@
 import "server-only";
-import { MCP_PATH } from "@/lib/formats/ucp";
-import { appUrl, flags } from "@/lib/env";
+import { MCP_PATH } from "@/features/catalog/formats/ucp";
+import { appUrl, flags } from "@/shared/env";
 
 export { UI_MOCK } from "@/components/lib/flags";
-export { appUrl } from "@/lib/env";
+export { appUrl } from "@/shared/env";
 
 export const crawlerUserAgent = () => flags.crawlerUserAgent();
 

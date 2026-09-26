@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toScanReport, type ScanRow } from "@/lib/db/mappers";
+import { toScanReport, type ScanRow } from "@/infrastructure/database/mappers";
 import type { ScanReport } from "../lib/contracts";
 import { HAS_SUPABASE_ENV, UI_MOCK } from "../lib/flags";
 import { fetchJson, startLiveFeed, type LiveFeed } from "./live";

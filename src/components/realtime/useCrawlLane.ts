@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toCrawlRun, type CrawlRunRow } from "@/lib/db/mappers";
+import { toCrawlRun, type CrawlRunRow } from "@/infrastructure/database/mappers";
 import type { CrawlRun, Store } from "../lib/contracts";
 import { HAS_SUPABASE_ENV, UI_MOCK } from "../lib/flags";
 import { fetchJson, isoOr, startLiveFeed, type LiveFeed } from "./live";

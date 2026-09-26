@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MCP_PATH } from "@/lib/formats/ucp";
+import { MCP_PATH } from "@/features/catalog/formats/ucp";
 import { CopyButton } from "../ui/CopyButton";
 
 const LINKS = [

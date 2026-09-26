@@ -1,4 +1,4 @@
-import { json, route } from "@/lib/http";
+import { json, route } from "@/shared/http";
 import { getLatestCheckoutId } from "@/app/(site)/_lib/queries";
 
 /** UI-only: the newest checkout's id for /checkouts/live follow mode (null until one exists). */

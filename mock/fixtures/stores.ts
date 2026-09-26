@@ -1,5 +1,5 @@
 import type { ReadinessCheck, ReadinessGrade, ReadinessReport, Store, StoreUrls } from "@/components/lib/contracts";
-import { MCP_PATH } from "@/lib/formats/ucp";
+import { MCP_PATH } from "@/features/catalog/formats/ucp";
 
 export const MOCK_APP_URL = "http://localhost:3000";
 export const MOCK_WOO_URL = "https://demo-woo.example.com";

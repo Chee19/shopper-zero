@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/infrastructure/supabase/client";
 
 let client: ReturnType<typeof createClient> | null = null;
 

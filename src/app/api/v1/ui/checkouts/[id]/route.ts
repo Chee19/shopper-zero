@@ -1,5 +1,5 @@
-import { AppError } from "@/lib/errors";
-import { json, route } from "@/lib/http";
+import { AppError } from "@/shared/errors";
+import { json, route } from "@/shared/http";
 import { getCheckoutView } from "@/app/(site)/_lib/queries";
 import { redactCheckout } from "@/components/checkout/redact";
 

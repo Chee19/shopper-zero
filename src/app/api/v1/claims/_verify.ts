@@ -2,7 +2,7 @@ import "server-only";
 import { Resolver } from "node:dns/promises";
 import * as cheerio from "cheerio";
 import { META_NAME, TXT_PREFIX, dnsHosts, primaryTxtHost, type CheckResult } from "@/components/claim/types";
-import { flags } from "@/lib/env";
+import { flags } from "@/shared/env";
 
 /** DNS TXT at _shoperzero.<host> (apex and the bare domain also accepted) must equal "shoperzero-verify=<token>". */
 export async function checkDns(host: string, token: string): Promise<CheckResult> {
