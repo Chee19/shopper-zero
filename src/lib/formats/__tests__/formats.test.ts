@@ -6,7 +6,7 @@ import { renderRootLlmsTxt, renderStoreLlmsTxt } from "../llms";
 import { buildOpenApi } from "../openapi";
 import { cartPermalink } from "../permalink";
 import { parseShopifyPaging, toShopifyDetailProduct, toShopifyListProduct } from "../shopify";
-import { mdInline, stripHtml, truncate } from "../text";
+import { mdInline, plainInline, stripHtml, truncate } from "../text";
 import { buildUcpProfile, OLDER_UCP_VERSIONS, toUcpProduct } from "../ucp";
 import { BASE, product, store, variant } from "./fixtures";
 
@@ -26,6 +26,9 @@ describe("text", () => {
     assert.ok(out.includes("\\[x\\]\\(https://evil.test\\)"));
     assert.equal(mdInline("# Heading"), "\\# Heading");
     assert.equal(mdInline("x".repeat(300)).length, 150);
+    assert.equal(mdInline("a\u001b[31mb\u0085c"), "a \\[31mb c");
+    assert.equal(mdInline("   "), "");
+    assert.equal(plainInline("Tom's (UK)\nShop"), "Tom's (UK) Shop");
   });
   it("truncates with an ellipsis", () => {
     assert.equal(truncate("abcdef", 4), "abc…");

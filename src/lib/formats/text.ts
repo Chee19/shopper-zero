@@ -41,6 +41,12 @@ export const plainDescription = (p: Pick<IndexedProduct, "description_text" | "d
 export const isAvailable = (v: Pick<IndexedVariant, "offer">) =>
   v.offer.availability === "in_stock" || v.offer.availability === "preorder";
 
+/** One line of plain text: control characters (incl. C1/NEL) and all whitespace runs become one space. */
+const plainLine = (s: string) => s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
+
+/** Third-party text in plain-text MCP summaries: one line, bounded, no Markdown escaping. */
+export const plainInline = (s: string, max = 120) => truncate(plainLine(s), max);
+
 /**
  * Third-party text (store names, product titles) placed inline in Markdown (llms.txt) or MCP summaries:
  * one line, no link/code syntax, no leading block markers, bounded length. Stops a crawled page from
@@ -48,9 +54,7 @@ export const isAvailable = (v: Pick<IndexedVariant, "offer">) =>
  */
 export const mdInline = (s: string, max = 150) =>
   truncate(
-    s
-      .replace(/\s+/g, " ")
-      .trim()
+    plainLine(s)
       .replace(/[\\`*_[\]()<>|]/g, (c) => `\\${c}`)
       .replace(/^([#>+-])/, "\\$1"),
     max,

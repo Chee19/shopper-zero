@@ -1,4 +1,4 @@
-import { CHECKOUT_TOOLS_LIVE } from "@/lib/agent/checkout-status";
+import { checkoutLive } from "@/lib/agent/checkout-status";
 import { CACHE, JSON_UTF8, ucpLinkHeader } from "@/lib/agent/http";
 import { logHit } from "@/lib/agent/log";
 import { appUrl } from "@/lib/env";
@@ -8,7 +8,7 @@ import { json, preflight, route } from "@/lib/http";
 export const GET = route("openapi", async (req, _ctx: unknown, { requestId }) => {
   const base = appUrl();
   logHit("openapi", { req });
-  return json(buildOpenApi(base, { checkoutLive: CHECKOUT_TOOLS_LIVE }), {
+  return json(buildOpenApi(base, { checkoutLive: checkoutLive() }), {
     requestId,
     headers: { "Content-Type": JSON_UTF8, "Cache-Control": CACHE.static, Link: ucpLinkHeader(`${base}/.well-known/ucp`) },
   });

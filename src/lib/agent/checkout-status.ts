@@ -16,20 +16,24 @@ export function enabledRails(): PaymentRailId[] {
 }
 
 /**
+ * THE switch every surface reads (03 §4.7): checkout tools are live AND at least one payment rail is
+ * configured. Profiles, llms.txt, openapi and /api/v1/stores/{slug} all go through this.
+ */
+export const checkoutLive = () => CHECKOUT_TOOLS_LIVE && enabledRails().length > 0;
+
+/**
  * B10: the source of truth is WS4's resolveCheckoutConnector(store). WS4 does not export
  * @/lib/checkout/connectors yet, so this uses the spec 03 §4.7 fallback (stores.checkout_connector,
  * which WS2 fills from resolveCheckoutConnector). Switch once WS4 lands it.
  */
 export const agentCheckoutFor = (s: Pick<Store, "checkout_connector">) =>
-  CHECKOUT_TOOLS_LIVE && s.checkout_connector !== "handoff";
+  checkoutLive() && s.checkout_connector !== "handoff";
 
-/** Profile checkout block, or null when checkout must not be claimed (not live, not this store, or no rails). */
+/** Profile checkout block, or null when checkout must not be claimed (see checkoutLive). */
 export function profileCheckout(claim: boolean): ProfileCheckout | null {
-  if (!CHECKOUT_TOOLS_LIVE || !claim) return null;
-  const rails = enabledRails();
-  if (rails.length === 0) return null; // never claim checkout with no way to pay
+  if (!claim || !checkoutLive()) return null;
   return {
-    rails,
+    rails: enabledRails(),
     stripeEnvironment: optionalEnv("STRIPE_SECRET_KEY")?.startsWith("sk_live_") ? "live" : "test",
     x402Network: optionalEnv("X402_NETWORK") ?? "eip155:84532",
     x402Facilitator: optionalEnv("X402_FACILITATOR_URL") ?? "https://x402.org/facilitator",

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Offer } from "@/lib/contracts";
 import { AppError } from "@/lib/errors";
-import { product } from "../../formats/__tests__/fixtures";
+import { BASE, product } from "../../formats/__tests__/fixtures";
 import { decodeCursor, encodeCursor } from "../cursor";
+import { shapeLookup } from "../lookup";
 import { clientKey, rateLimit, resetRateLimits } from "../ratelimit";
 import { selectVariants } from "../select";
 import { verifyVariants } from "../verify";
@@ -124,5 +125,43 @@ describe("verifyVariants", () => {
       return offer(100);
     });
     assert.deepEqual(seen, ["v3", "v4", "v5", "v6", "v7"]);
+  });
+});
+
+describe("shapeLookup (lookup_catalog)", () => {
+  type V = { id: string; inputs?: { id: string; match: string }[] };
+  const variantsOf = (body: ReturnType<typeof shapeLookup>, i = 0) => body.products[i].variants as V[];
+
+  it("a variant ref keeps only that variant, tagged exact", () => {
+    const body = shapeLookup([product()], [], ["v-m"], BASE);
+    assert.deepEqual(variantsOf(body).map((v) => v.id), ["v-m"]);
+    assert.deepEqual(variantsOf(body)[0].inputs, [{ id: "v-m", match: "exact" }]);
+  });
+  it("a product ref keeps all variants and tags the first available one featured", () => {
+    const body = shapeLookup([product()], [], ["demo-woo-example-com:1204"], BASE);
+    const vs = variantsOf(body);
+    assert.equal(vs.length, 3);
+    assert.deepEqual(vs.find((v) => v.id === "v-m")?.inputs, [{ id: "demo-woo-example-com:1204", match: "featured" }]);
+    assert.equal(vs.find((v) => v.id === "v-s")?.inputs, undefined);
+  });
+  it("matches uppercase variant uuids and echoes the caller's ref", () => {
+    const p = product();
+    p.variants[1].id = "9b0d6c3e-1a2b-4c5d-8e9f-0a1b2c3d4e5f";
+    const ref = p.variants[1].id.toUpperCase();
+    const vs = variantsOf(shapeLookup([p], [], [ref], BASE));
+    assert.deepEqual(vs.map((v) => v.id), [p.variants[1].id]);
+    assert.deepEqual(vs[0].inputs, [{ id: ref, match: "exact" }]);
+  });
+  it("never tags refs that the db reported as not_found", () => {
+    const body = shapeLookup([product()], ["DEMO-WOO-EXAMPLE-COM:1204"], ["demo-woo-example-com:1204", "DEMO-WOO-EXAMPLE-COM:1204"], BASE);
+    const tags = variantsOf(body).flatMap((v) => v.inputs ?? []).map((t) => t.id);
+    assert.deepEqual(tags, ["demo-woo-example-com:1204"]);
+    assert.deepEqual(body.not_found, ["DEMO-WOO-EXAMPLE-COM:1204"]);
+    assert.deepEqual(body.messages, [{ type: "info", code: "not_found", content: "DEMO-WOO-EXAMPLE-COM:1204" }]);
+  });
+  it("caps product lookups at 25 variants", () => {
+    const base = product().variants[1];
+    const many = product({ variants: Array.from({ length: 40 }, (_, i) => ({ ...base, id: `v${i}`, position: i + 1 })) });
+    assert.equal(variantsOf(shapeLookup([many], [], ["p-1"], BASE)).length, 25);
   });
 });
