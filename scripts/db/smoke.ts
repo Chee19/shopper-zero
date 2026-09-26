@@ -225,9 +225,12 @@ async function main() {
     assert.deepEqual([c2.token, c2.method], [c1.token, "meta_tag"]); // non-rotating
     const c3 = await upsertClaim(smokeStoreId, "dns_txt");
     assert.notEqual(c3.token, c1.token);                            // rotates
-    await markClaimVerified(smokeStoreId);
+    await rejectsWith(markClaimVerified(smokeStoreId, c1.token), "conflict"); // stale token
+    assert.equal((await getClaim(smokeStoreId))?.verified_at, null);
+    await markClaimVerified(smokeStoreId, c3.token);
     assert.ok((await getClaim(smokeStoreId))?.verified_at);
     assert.equal((await getStoreById(smokeStoreId))?.claimed, true);
+    assert.match((await getStoreById(smokeStoreId))!.urls.mcp, /\/api\/ucp\/mcp$/);
     assert.equal((await upsertClaim(smokeStoreId, "dns_txt")).verified_at, null);
     const optProduct = await upsertStoreProducts(smokeStoreId, [beanie(["Blue"])]);
     assert.equal(optProduct.upserted, 1);

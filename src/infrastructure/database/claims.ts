@@ -66,16 +66,22 @@ export async function getClaim(storeId: string): Promise<StoreClaim | null> {
 }
 
 /** Sets store_claims.verified_at and stores.claimed_at = now(). */
-export async function markClaimVerified(storeId: string): Promise<void> {
+/**
+ * Marks the store's claim verified. Pass the token that was checked (DNS TXT / meta tag) so a claim rotated
+ * between the check and this write is not verified: that case throws `conflict`.
+ */
+export async function markClaimVerified(storeId: string, token?: string): Promise<void> {
   const now = new Date().toISOString();
-  const { data, error } = await db()
-    .from("store_claims")
-    .update({ verified_at: now })
-    .eq("store_id", storeId)
-    .select("store_id")
-    .maybeSingle();
+  let q = db().from("store_claims").update({ verified_at: now }).eq("store_id", storeId);
+  if (token !== undefined) q = q.eq("token", token);
+  const { data, error } = await q.select("store_id").maybeSingle();
   if (error) throw toAppError(error);
-  if (!data) throw new AppError("not_found", "No claim for this store", { store_id: storeId });
+  if (!data) {
+    if (token !== undefined && (await getClaim(storeId))) {
+      throw new AppError("conflict", "Claim token changed since it was checked", { store_id: storeId });
+    }
+    throw new AppError("not_found", "No claim for this store", { store_id: storeId });
+  }
   const { error: storeErr } = await db().from("stores").update({ claimed_at: now }).eq("id", storeId);
   if (storeErr) throw toAppError(storeErr);
 }

@@ -1710,7 +1710,8 @@ export declare function upsertClaim(storeId: string, method: ClaimMethod): Promi
 export declare function getOrCreateClaim(storeId: string, method?: ClaimMethod): Promise<StoreClaim>;
 export declare function getClaim(storeId: string): Promise<StoreClaim | null>;
 /** Sets store_claims.verified_at and stores.claimed_at = now(). */
-export declare function markClaimVerified(storeId: string): Promise<void>;
+/** Pass the checked token: a claim rotated in between is not verified (throws `conflict`). */
+export declare function markClaimVerified(storeId: string, token?: string): Promise<void>;
 export declare function setStoreOptOut(storeId: string, optedOut: boolean): Promise<void>;
 
 // ---------------- metrics.ts ----------------

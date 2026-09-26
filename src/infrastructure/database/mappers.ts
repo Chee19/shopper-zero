@@ -7,6 +7,7 @@ import type {
   Platform, ProductSummary, ScanReport, Store, StoreRef, StoreStrategy, StoreSummary, StoreUrls,
 } from "@/contracts";
 import { PLATFORMS } from "@/contracts";
+import { MCP_PATH } from "@/features/catalog/formats/ucp";
 
 export const iso = (ts: string): string => new Date(ts).toISOString();
 export const isoOrNull = (ts: string | null | undefined): string | null => (ts ? iso(ts) : null);
@@ -19,7 +20,7 @@ export function storeUrls(slug: string, base: string): StoreUrls {
     llms_txt: `${b}/s/${slug}/llms.txt`,
     feed: `${b}/s/${slug}/feed.acp.jsonl`,
     ucp: `${b}/s/${slug}/.well-known/ucp`,
-    mcp: `${b}/api/mcp`,
+    mcp: `${b}${MCP_PATH}`,
   };
 }
 
