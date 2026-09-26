@@ -6,6 +6,12 @@ import { PAYMENT_HANDLER_IDS, UCP_SUPPORTED_VERSIONS, UCP_VERSION } from "@/lib/
 import { cartPermalink } from "./permalink";
 import { isAvailable, plainDescription, truncate } from "./text";
 
+/**
+ * Path of the composed agent MCP server (catalog + crawl + checkout). /api/mcp currently serves WS4's
+ * mock-only checkout server, so every surface advertises this one (mirrors Shopify's /api/ucp/mcp).
+ */
+export const MCP_PATH = "/api/ucp/mcp";
+
 // ---------------- envelope ----------------
 
 export const CAP_SEARCH = "dev.ucp.shopping.catalog.search";
@@ -257,7 +263,7 @@ export function buildUcpProfile({ base, store, version = UCP_VERSION, checkout =
             version: v,
             spec: ucpSpec(v, "specification/overview/"),
             transport: "mcp",
-            endpoint: store ? `${base}/api/mcp?store=${encodeURIComponent(store.slug)}` : `${base}/api/mcp`,
+            endpoint: store ? `${base}${MCP_PATH}?store=${encodeURIComponent(store.slug)}` : `${base}${MCP_PATH}`,
             schema: ucpSpec(v, "services/shopping/mcp.openrpc.json"),
           },
         ],

@@ -174,7 +174,7 @@ describe("UCP profile", () => {
     assert.deepEqual(Object.keys(pr.ucp), ["version", "supported_versions", "services", "capabilities", "payment_handlers"]);
     assert.deepEqual(Object.keys(pr.ucp.capabilities), ["dev.ucp.shopping.catalog.search", "dev.ucp.shopping.catalog.lookup"]);
     assert.deepEqual(pr.ucp.payment_handlers, {});
-    assert.equal(pr.ucp.services["dev.ucp.shopping"][0].endpoint, `${BASE}/api/mcp`);
+    assert.equal(pr.ucp.services["dev.ucp.shopping"][0].endpoint, `${BASE}/api/ucp/mcp`);
     assert.deepEqual(Object.keys(pr.ucp.supported_versions ?? {}), [...OLDER_UCP_VERSIONS]);
   });
   it("per-store profile scopes the endpoint and adds checkout when claimed", () => {
@@ -183,7 +183,7 @@ describe("UCP profile", () => {
       store: { slug: "a-b" },
       checkout: { rails: ["stripe_spt", "x402"] },
     });
-    assert.equal(pr.ucp.services["dev.ucp.shopping"][0].endpoint, `${BASE}/api/mcp?store=a-b`);
+    assert.equal(pr.ucp.services["dev.ucp.shopping"][0].endpoint, `${BASE}/api/ucp/mcp?store=a-b`);
     assert.deepEqual(pr.ucp.supported_versions, {});
     assert.ok("dev.ucp.shopping.fulfillment" in pr.ucp.capabilities);
     // Stripe-only MVP: x402 is never advertised, even if listed.
@@ -250,7 +250,7 @@ describe("llms.txt", () => {
     const base = { base: BASE, store: store(), products: [product()], agentCheckout: false };
     const plain = renderStoreLlmsTxt({ ...base, scan: null });
     assert.ok(plain.startsWith("# Demo Woo\n"));
-    assert.ok(plain.includes(`\`${BASE}/api/mcp?store=demo-woo-example-com\``));
+    assert.ok(plain.includes(`\`${BASE}/api/ucp/mcp?store=demo-woo-example-com\``));
     assert.ok(plain.includes(`- [Classic Pullover Hoodie](${BASE}/s/demo-woo-example-com/products/classic-pullover-hoodie.json): $45.00 · in stock`));
     assert.ok(!plain.includes("readiness scan"));
     assert.ok(!plain.includes("Note: the last crawl"));
@@ -280,7 +280,7 @@ describe("openapi + agent card", () => {
   });
   it("agent card points at the MCP endpoint", () => {
     const c = buildAgentCard(BASE);
-    assert.equal(c.supportedInterfaces[0].url, `${BASE}/api/mcp`);
+    assert.equal(c.supportedInterfaces[0].url, `${BASE}/api/ucp/mcp`);
     assert.deepEqual(c.skills.map((s) => s.id), ["search_products", "product_detail", "checkout"]);
   });
 });

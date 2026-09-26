@@ -5,6 +5,7 @@ import { UCP_VERSION } from "@/lib/contracts";
 import { formatMoney } from "@/lib/money";
 import type { ScanInfo } from "@/lib/agent/scan-info";
 import { mdInline } from "./text";
+import { MCP_PATH } from "./ucp";
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
   woocommerce: "WooCommerce",
@@ -58,7 +59,7 @@ Index: ${stats.stores} stores, ${stats.products} products. Generated ${now}.
 
 ## For AI agents
 
-- MCP endpoint (Streamable HTTP, no auth): \`${base}/api/mcp\`. Call \`tools/list\` for the tools and their schemas.
+- MCP endpoint (Streamable HTTP, no auth): \`${base}${MCP_PATH}\`. Call \`tools/list\` for the tools and their schemas.
 - UCP profile: \`GET ${base}/.well-known/ucp\` (UCP version ${UCP_VERSION}).
 - REST API: \`GET ${base}/api/v1/search?q={query}\` (OpenAPI at ${base}/openapi.json).
 - Every store also has its own llms.txt, products.json, product feed and UCP profile (links below).
@@ -152,7 +153,7 @@ Checkout: ${storeCheckoutLine}
 
 ## For AI agents
 
-- MCP endpoint scoped to this store (Streamable HTTP, no auth): \`${base}/api/mcp?store=${s.slug}\`. Tools: \`search_catalog\`, \`lookup_catalog\`, \`get_product\`, \`create_checkout\`, \`update_checkout\`, \`get_checkout\`, \`complete_checkout\`, \`cancel_checkout\`, \`get_order\`.
+- MCP endpoint scoped to this store (Streamable HTTP, no auth): \`${base}${MCP_PATH}?store=${s.slug}\`. Tools: \`search_catalog\`, \`lookup_catalog\`, \`get_product\`, \`create_checkout\`, \`update_checkout\`, \`get_checkout\`, \`complete_checkout\`, \`cancel_checkout\`, \`get_order\`.
 - UCP profile: \`GET ${base}/s/${s.slug}/.well-known/ucp\`
 - REST search: \`GET ${base}/api/v1/search?store=${s.slug}&q={query}\`
 
