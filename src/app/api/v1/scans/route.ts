@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { CreateScanInputSchema } from "@/lib/contracts";
-import { isAppError } from "@/lib/errors";
-import { errorResponse, json, parseJsonBody, preflight, route } from "@/lib/http";
-import { startScan } from "@/lib/scan";
+import { CreateScanInputSchema } from "@/contracts";
+import { isAppError } from "@/shared/errors";
+import { errorResponse, json, parseJsonBody, preflight, route } from "@/shared/http";
+import { startScan } from "@/features/scan";
 
 // runScan runs inside after(), which lives within this route's maxDuration.
 export const maxDuration = 300;

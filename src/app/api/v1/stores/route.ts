@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { route, json, parseJsonBody, parseSearchParams, preflight, errorResponse } from "@/lib/http";
-import { listStores } from "@/lib/db";
-import { startStoreCrawl } from "@/lib/crawl";
-import { PLATFORMS } from "@/lib/contracts";
-import { isAppError } from "@/lib/errors";
+import { route, json, parseJsonBody, parseSearchParams, preflight, errorResponse } from "@/shared/http";
+import { listStores } from "@/infrastructure/database";
+import { startStoreCrawl } from "@/features/crawl";
+import { PLATFORMS } from "@/contracts";
+import { isAppError } from "@/shared/errors";
 
 export const maxDuration = 300; // startStoreCrawl schedules the crawl with after()
 export const OPTIONS = preflight;

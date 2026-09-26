@@ -13,7 +13,7 @@ This revision follows `docs/specs/DECISIONS.md`, which is binding.
   - The CTA calls `POST /api/v1/stores {store_id}`. An inline indexing lane (the round-1 crawl lane) takes over, and the flow ends on `/stores/{slug}` with the grade animating to **A**.
 - The round-1 multi-store view (`/scan?runs=…`) is **removed**. The crawl lane survives as a component inside `/scan/{id}`.
 - Contract names now come from spec 00 and DECISIONS §A. The scan types are `ScanReport`, `AccessProbe`, `AccessMethod`, `ProbeStatus`, `Capabilities`, `ProbeSignal` and `DomRecipe`. DB helpers include `getScan`, `getLatestScanForStore`, `getStoreById`, `listStores`, `listStoreProducts`, `getPublicMetrics` and `listCheckoutEvents`. The error envelope is `{error:{code,message,details?}}` (B11).
-- **B3 claims:** tokens live in the service-role-only `store_claims` table. WS5 goes through `getClaim`, `upsertClaim`, `markClaimVerified` and `setStoreOptOut` from `@/lib/db`. There is no `stores.claim_token` and no `metadata.claim`. The token strings follow spec 00: TXT `shoperzero-verify=<token>` and `<meta name="shoperzero-verify">`.
+- **B3 claims:** tokens live in the service-role-only `store_claims` table. WS5 goes through `getClaim`, `upsertClaim`, `markClaimVerified` and `setStoreOptOut` from `@/infrastructure/database`. There is no `stores.claim_token` and no `metadata.claim`. The token strings follow spec 00: TXT `shoperzero-verify=<token>` and `<meta name="shoperzero-verify">`.
 - **B16:** a new static `/bot` page describes the crawler and scanner and explains how to opt out.
 - Mock fixtures now include one `ScanReport` per `best_method` (`api`, `dom`, `computer_use`, `none`). The computer-use fixture has offline SVG screenshots and a step log.
 - The demo script now opens on a live scan that lands in `dom` with a poor grade, then goes Make agent-ready → A → Claude buys.
@@ -44,7 +44,7 @@ Where this spec disagrees with a sibling spec about that sibling's own files, th
    - (c) indexing progress after "Make it agent-ready";
    - (d) the hand-off to the store page.
 3. **Store page `/stores/{slug}`:** the grade animating from the scan grade to A, links to every agent surface, a "Connect to Claude" snippet with copy, and the product grid. `/stores` is a small index.
-4. **Checkout timeline:** `/checkouts/{id}`, plus `/checkouts/live`, which follows the latest checkout. Realtime on `checkout_events`, with links to the Stripe PaymentIntent, the BaseScan tx and the Woo order.
+4. **Checkout timeline:** `/checkouts/{id}`, plus `/checkouts/live`, which follows the latest checkout. Realtime on `checkout_events`, with links to the Stripe PaymentIntent and the Woo order.
 5. **Claim `/claim/{slug}`** and `POST /api/v1/claims`, backed by `store_claims`.
 6. **Metrics strip:** stores scanned (split by best method), products normalized, time to agent-ready, agent checkouts.
 7. **`/bot`:** crawler and scanner disclosure, plus opt-out instructions (B16).
@@ -108,7 +108,7 @@ mock/fixtures/*.ts           typed fixtures (§9)
 mock/fixtures/shots.ts       offline SVG screenshot generator for computer-use fixtures
 mock/recorded/*.json         real runs exported after rehearsal
 mock/seed-ui.sql             optional local seed
-mock/index.html              EXISTING earlier-concept design mock. Keep it and do not edit it.
+demos/prototypes/original/index.html              EXISTING earlier-concept design mock. Keep it and do not edit it.
                              It is the visual reference for §8.
 
 docs/demo/runbook.md  docs/demo/script.md  docs/demo/qa.md   (copied from §10)
@@ -120,7 +120,7 @@ docs/demo/runbook.md  docs/demo/script.md  docs/demo/qa.md   (copied from §10)
 
 ## 3. Interfaces consumed
 
-Import types from `@/lib/contracts` (barrel; the scan types live in `scan.ts`). Import helpers from `@/lib/db`.
+Import types from `@/contracts` (barrel; the scan types live in `scan.ts`). Import helpers from `@/infrastructure/database`.
 
 | Need | Provider | Name (exact) | Fallback if not landed |
 |---|---|---|---|
@@ -133,12 +133,12 @@ Import types from `@/lib/contracts` (barrel; the scan types live in `scan.ts`). 
 | Crawl progress | WS2 | `GET /api/v1/crawl-runs/{id}`, Realtime on `crawl_runs` | Realtime only |
 | Store | WS1 / WS3 | `getStoreBySlug`, `getStoreById`, `listStores`; REST `GET /api/v1/stores/{slug}` (a `Store` plus `latest_crawl_run`) | — |
 | Products | WS1 | `listStoreProducts(storeId, {limit, page})` → `{products, total}` | — |
-| Checkout | WS4 | `getCheckout(id)` from `@/lib/checkout/service` (throws when missing); `GET /api/v1/checkouts/{id}` | Events only |
+| Checkout | WS4 | `getCheckout(id)` from `@/features/checkout/service` (throws when missing); `GET /api/v1/checkouts/{id}` | Events only |
 | Checkout events | WS1 | `listCheckoutEvents(checkoutId)`; Realtime on `checkout_events` | Browser select |
 | Claims | WS1 | `getClaim(storeId)`, `upsertClaim(storeId, method)` (**rotates the token**), `markClaimVerified(storeId)`, `setStoreOptOut(storeId, optedOut)` | none: the claim flow is a slide (cut item 8) |
 | Metrics | WS1 | `getPublicMetrics(): PublicMetrics` | Mock numbers |
-| HTTP helpers | WS1 | `route`, `json`, `errorResponse`, `parseJsonBody`, `preflight` (`@/lib/http`), `AppError` (`@/lib/errors`), `appUrl()`, `flags.crawlerUserAgent()` (`@/lib/env`) | Inline equivalents |
-| Supabase clients | scaffold | `@/lib/supabase/{client,server,admin}` | — |
+| HTTP helpers | WS1 | `route`, `json`, `errorResponse`, `parseJsonBody`, `preflight` (`@/shared/http`), `AppError` (`@/shared/errors`), `appUrl()`, `flags.crawlerUserAgent()` (`@/shared/env`) | Inline equivalents |
+| Supabase clients | scaffold | `@/infrastructure/supabase/{client,server,admin}` | — |
 
 ---
 
@@ -203,10 +203,10 @@ Import types from `@/lib/contracts` (barrel; the scan types live in `scan.ts`). 
 
 ```ts
 export const UI_MOCK = process.env.NEXT_PUBLIC_UI_MOCK === "1";
-export { appUrl } from "@/lib/env";      // WS1; fallback: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "")
+export { appUrl } from "@/shared/env";      // WS1; fallback: (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "")
 ```
 
-**Rule:** when `UI_MOCK` is true, never construct a Supabase client and never import `@/lib/db`, since that module is server-only and would create a client. The UI must render with no Supabase env at all, so `_lib/queries.ts` imports db helpers lazily: `const db = await import("@/lib/db")` inside the non-mock branch.
+**Rule:** when `UI_MOCK` is true, never construct a Supabase client and never import `@/infrastructure/database`, since that module is server-only and would create a client. The UI must render with no Supabase env at all, so `_lib/queries.ts` imports db helpers lazily: `const db = await import("@/infrastructure/database")` inside the non-mock branch.
 
 ### 6.2 `_lib/queries.ts` (server-only)
 
@@ -237,7 +237,7 @@ Validate ids with `/^[0-9a-f-]{36}$/i`, or `/^replay-[a-z0-9-]{1,40}$/` for scan
 
 ### 6.3 Realtime hooks (`src/components/realtime/`)
 
-`supabase-browser.ts` holds one browser client per tab: `export const browserSupabase = () => (client ??= createClient())`, where `createClient` comes from `@/lib/supabase/client`.
+`supabase-browser.ts` holds one browser client per tab: `export const browserSupabase = () => (client ??= createClient())`, where `createClient` comes from `@/infrastructure/supabase/client`.
 
 All hooks follow the same pattern:
 - a unique channel topic (`${table}:${id}:${crypto.randomUUID()}`), so a StrictMode double mount does not collide;
@@ -289,7 +289,6 @@ The anon role can read `scans`, `stores`, `crawl_runs` and `checkout_events` (pu
 | `shortId` | Short id |
 | `gradeTone` | A→`good`, B→`good2`, C→`warn`, D→`serious`, F→`bad` |
 | `stripeUrl(pi)` | `https://dashboard.stripe.com/test/payments/${pi}` (**UNVERIFIED** for sandboxes; the id is always shown with copy) |
-| `explorerUrl(data)` | `data.explorer_url` if present; otherwise `eip155:84532` → `https://sepolia.basescan.org/tx/${hash}` and `eip155:8453` → `https://basescan.org/tx/${hash}` |
 
 `components/lib/methods.ts` is used by cards, the comparison table and the landing explainer:
 
@@ -381,7 +380,7 @@ Every page exports `metadata` (or `generateMetadata` for dynamic pages), titled 
 │   └───────────────────┘       └───────────────────┘       └────────────────┘
 │                                                                          │
 │   ┌ STORES SCANNED ──────┬ PRODUCTS ┬ TIME TO AGENT-READY ┬ AGENT CHECKOUTS ┐
-│   │ 9  ▆▆▆▃▂ api/dom/cu │ 1,042    │ 0:38 median         │ 3 · stripe 2 x402 1 │
+│   │ 9  ▆▆▆▃▂ api/dom/cu │ 1,042    │ 0:38 median         │ 3 · Stripe test │
 │   └──────────────────────┴──────────┴─────────────────────┴─────────────────┘
 │   RECENTLY SCANNED                                                       │
 │   [D→A] berlinpackaging.com · BigCommerce · via DOM · 4 min ago       →  │
@@ -644,7 +643,7 @@ A good-tone banner: "{domain} is agent-ready: **{grade}**. Agents can now search
 
 **Data:**
 - `[id]`: `getCheckoutView(id)`. If both the checkout and the events are empty → `notFound()`.
-- `live`: `?replay=spt|x402|handoff|<recorded>` → fixture. Otherwise `getLatestCheckoutId()`, then `mode="follow"`.
+- `live`: `?replay=spt|handoff|<recorded>` → fixture. Otherwise `getLatestCheckoutId()`, then `mode="follow"`.
 - Empty follow state: "Waiting for an agent to start a checkout…" with a pulsing dot. The first INSERT attaches.
 
 **Layout:** three columns on `lg` (rail | events | summary), stacked on mobile.
@@ -670,12 +669,10 @@ A good-tone banner: "{domain} is agent-ready: **{grade}**. Agents can now search
 - `+{s}s` since the first event;
 - `from_state → to_state` chips;
 - `message`;
-- `PaymentLinks` reads `data` narrowed to `CheckoutEventData`. The keys are fixed by WS4 (spec 04 §6.4 / CCR-W4-8): `rail`, `payment_intent_id`, `tx_hash`, `network`, `merchant_order_id`, `merchant_order_url`, `continue_url`, `amount`, `error_code`, `simulated`. Spec 00's comment also mentions `explorer_url`; prefer it when present.
 
 | Key | Rendering |
 |---|---|
 | `payment_intent_id` | "PaymentIntent pi_… ↗" + copy |
-| `tx_hash` | "Base Sepolia tx 0x12…ab ↗" |
 | `merchant_order_url` / `merchant_order_id` | "WooCommerce order #… ↗" |
 | `continue_url` | "Open prefilled cart ↗" |
 | `rail` | rail chip |
@@ -685,7 +682,7 @@ A good-tone banner: "{domain} is agent-ready: **{grade}**. Agents can now search
 
 **CheckoutSummary:**
 - line items, totals, the selected shipping option and the payment handlers;
-- an **Order card** when `checkout.order` exists: merchant order id, Woo admin link, payment reference and payer (truncated);
+- an **Order card** when `checkout.order` exists: merchant order id, Woo admin link, Stripe payment reference;
 - a **Handoff card** when `continue_url` exists and the status is `requires_escalation`: "Continue on merchant site ↗", with the copy "This store has no agent checkout API. We hand off honestly with a prefilled cart."
 
 **PII rule:** never render `buyer.email`, `buyer.phone`, `address.line1` or `address.line2`. Show only the name's initials and `city, country`.
@@ -805,7 +802,7 @@ export async function checkDns(host: string, token: string) {
 export async function checkMeta(host: string, token: string) {
   const res = await fetch(`https://${host}/`, {
     redirect: "follow", signal: AbortSignal.timeout(8000),
-    headers: { "User-Agent": crawlerUA(), Accept: "text/html" },   // flags.crawlerUserAgent() from @/lib/env
+    headers: { "User-Agent": crawlerUA(), Accept: "text/html" },   // flags.crawlerUserAgent() from @/shared/env
   }).catch(() => null);
   if (!res?.ok) return { method: "meta_tag", ok: false, observed: [],
     hint: `Couldn't fetch https://${host}/ (${res?.status ?? "network error"}).` } as const;
@@ -864,7 +861,7 @@ export async function getUiMetrics(): Promise<UiMetrics | null>
 | **Stores scanned** | `stores_total` | a stacked bar by `stores_by_best_method` (api good, dom warn, computer_use serious, none bad) with a legend "API · DOM · Computer use · None" |
 | **Products normalized** | `products` | — |
 | **Time to agent-ready** | `median_seconds_to_ready` as `m:ss` | "median, CTA → live products.json" |
-| **Agent checkouts** | `orders` | "Stripe {n} · x402 {m}" |
+| **Agent checkouts** | `orders` | "Stripe test {n}" |
 | *(optional)* | `agent_requests_24h` | "agent queries (24 h)" |
 
 §12 R2-9 asks WS1 to fold the extras into `getPublicMetrics`. The fallback is computing them here.
@@ -908,7 +905,7 @@ ShoperZero sits between a store and an agent, so the UI reads like an instrument
 - strict status colors (good, warn, serious, bad) used only for state;
 - mono type for anything an agent consumes (URLs, selectors, ids, counters), sans for text a human reads.
 
-The two signature moments are the **cascade** (cards lighting up left to right, the computer-use frame streaming screenshots) and the **grade flip D → A**. The visual language comes from `mock/index.html`: cards, pills, the shimmer rail, the live pill, the score ring and the hero beam. The earlier mock and the product therefore look like one system.
+The two signature moments are the **cascade** (cards lighting up left to right, the computer-use frame streaming screenshots) and the **grade flip D → A**. The visual language comes from `demos/prototypes/original/index.html`: cards, pills, the shimmer rail, the live pill, the score ring and the hero beam. The earlier mock and the product therefore look like one system.
 
 ### 8.2 Typography
 
@@ -1009,7 +1006,7 @@ body { background: var(--page); color: var(--ink); font-family: var(--font-sans)
 | **CodeBlock** | `bg-code text-code-ink rounded-xl p-4 font-mono text-[12.5px]` plus a copy button |
 | **CopyButton** | `navigator.clipboard.writeText`; the icon becomes a check for 1.5 s; `aria-label="Copy"` |
 | **Comparison bars** | log-scale width: `Math.max(4, 100 * Math.log10(1 + v) / Math.log10(1 + max))` % |
-| **Hero beam** | landing only, optional: the conic sweep from `mock/index.html` `.beam` |
+| **Hero beam** | landing only, optional: the conic sweep from `demos/prototypes/original/index.html` `.beam` |
 | **Icons** | 12 inline SVGs in `ui/icons.tsx`: arrow-right, external, copy, check, x, refresh, bolt, lock, store, globe, cursor, code |
 
 ### 8.5 Layout
@@ -1045,11 +1042,11 @@ This keeps the build within about 2 hours and avoids `package-lock.json` conflic
    - The claims route returns fixture views.
 2. **Replay routes work in every mode**, and double as the on-stage safety net:
    - `/scan/replay-api`, `/scan/replay-dom`, `/scan/replay-cu`, `/scan/replay-none`, `/scan/replay-<recorded id>`;
-   - `/checkouts/live?replay=spt|x402|handoff|<recorded>`.
+   - `/checkouts/live?replay=spt|handoff|<recorded>`.
    - Replays are **always labeled** "Replay · recorded {date}" in place of the LivePill.
    - Outside mock mode, a replay's CTA plays the recorded indexing frames and ends on a "Replay complete" card. It links to the real `/stores/{slug}` if `getStoreBySlug(fixture.store.slug)` exists, and otherwise stays on the card.
 
-### 9.2 Fixtures (`mock/fixtures/`, TypeScript typed with `@/lib/contracts`)
+### 9.2 Fixtures (`mock/fixtures/`, TypeScript typed with `@/contracts`)
 
 `tsconfig` includes `**/*.ts`, so the fixtures type-check. Import them relatively from `src/app/(site)/_lib/mock.ts` (for example `../../../../mock/fixtures`). Server pages pass fixture data to client components as props.
 
@@ -1072,7 +1069,7 @@ export type ScanReplay = {
 | `shots.ts` | `mockShot(title: string, lines: string[], highlight?: string): string` returns a `data:image/svg+xml;utf8,…` URI of a 1280×800 wireframe page (header bar, title, gray blocks, and a highlighted rectangle labeled `highlight`). Offline, with no image files. |
 | `cascade.ts` | `buildCascadeFrames(final: ScanReport, pace = 1): ScanReplayFrame[]` (algorithm below) |
 | `crawl-scripts.ts` | indexing frames per store (round-1 scripts, 10–25 s) |
-| `checkout-scripts.ts` | `spt`, `x402`, `handoff`: a `CheckoutSession` + `{at_ms, event, checkout?}` frames, using the CCR-5 `data` keys |
+| `checkout-scripts.ts` | `spt`, `handoff`: a `CheckoutSession` + `{at_ms, event, checkout?}` frames, using the CCR-5 `data` keys |
 | `metrics.ts` | `MOCK_METRICS: UiMetrics` (9 stores: api 4, dom 3, computer_use 1, none 1; 1,042 products; 38 s; 3 orders) |
 | `claims.ts` | a `ClaimView` for `berlinpackaging-com` with token `mock9f2c…` |
 
@@ -1148,8 +1145,6 @@ Create `runbook.md` (§10.1 + §10.3 + §10.4), `script.md` (§10.2) and `qa.md`
 
 **Payments (T-30)**
 - [ ] The Stripe test mode SPT spike passes. If WS4 fell back, say "SPT-compatible PaymentIntent".
-- [ ] **Wallets funded:** the demo wallet holds Base Sepolia USDC (faucet.circle.com, at least $5) and about 0.01 Base Sepolia ETH as a gas buffer (**UNVERIFIED** whether it is needed).
-- [ ] One x402 purchase is done and its BaseScan link opens.
 
 **Agent (T-20)**
 - [ ] **Claude Desktop MCP configured:** "ShoperZero" → `{APP}/api/mcp` and "ShoperZero Demo Wallet" → `{APP}/api/demo-wallet/mcp`. Disable other connectors and web search.
@@ -1200,7 +1195,7 @@ Create `runbook.md` (§10.1 + §10.3 + §10.4), `script.md` (§10.2) and `qa.md`
 | The CTA errors, or indexing fails | Open the pre-indexed store page of the second candidate, or `/stores/shoperzero-demo`. |
 | The computer-use tab is broken | Use `/scan/replay-cu`: offline SVG screenshots, labeled Replay. |
 | Claude stalls or picks wrong | Follow up with "Buy the Hoodie from ShoperZero Demo, size M." Otherwise use the WS4 agent script, then `/checkouts/live?replay=spt`. |
-| Stripe fails | Say "pay with x402" and retry; otherwise use the replay. |
+| Stripe fails | Use the explicitly labelled Stripe test fallback; if unavailable, show a clearly labelled recorded replay. |
 | Woo tunnel down | Open the rehearsal `/checkouts/{id}` plus a screenshot of the Woo order. |
 | Network gone | Play the backup video from the matching timestamp and narrate live. |
 
@@ -1228,7 +1223,6 @@ Create `runbook.md` (§10.1 + §10.3 + §10.4), `script.md` (§10.2) and `qa.md`
 
   Legal risk is ToS/contract rather than CFAA: hiQ v. LinkedIn (2022; hiQ lost on contract) and Meta v. Bright Data (2024). Consent is handled by the claim and opt-out loop, which is the lesson of Amazon "Buy for Me".
 - **"Who's the merchant of record?"** In the demo, the agent pays ShoperZero and we place the order on **our own** Woo store with an offline method plus a receipt note. Third-party stores get a `continue_url` handoff. In production, "we buy from the merchant" would make us a reseller/MoR (tax, chargebacks), so production runs through the merchant plugin or Stripe Connect, with the merchant as MoR.
-- **"Why x402 for physical goods?"** It is the agent-to-us rail, not a merchant rail. It is instant and needs no account. Volume is small (about $28k/day, Mar 2026), so Stripe SPT is the default.
 - **"Isn't this Rye / Channel3 / Crossmint?"** They're closed, per-call, agent-developer side, and often browser automation. We give the merchant open endpoints and a claim loop, and agents use them for free. Our computer-use probe is a diagnostic, not the product.
 - **"Stale prices?"** `verifyOffer` checks live before the quote. Woo `expected_total` guards against drift, quotes have a 10-minute TTL, and the total is immutable once awaiting payment.
 - **"UCP-compliant?"** We mirror Shopify's live profile (`2026-08-25`, also listing `2026-04-08`) and claim only the capabilities we implement. We have not been certified.
@@ -1334,5 +1328,4 @@ Round-2 requests:
 | `Instrument_Serif` export in `next/font/google` | §8.2 | Geist italic |
 | `berlinpackaging.com` lands in `dom` and indexes 40 products in < 30 s | §10.1 | Pick another candidate at T-60, or use `/scan/replay-dom` |
 | Woo sample data has hoodies under $50 | §10.1 | Create one in wp-admin |
-| x402 buyer needs no ETH for gas | §10.1 | Keep 0.01 Base Sepolia ETH |
 | `createBrowserClient` is a singleton | §6.3 | The module-level cache makes it moot |

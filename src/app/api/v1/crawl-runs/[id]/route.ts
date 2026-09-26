@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { route, json, preflight } from "@/lib/http";
-import { getCrawlRun } from "@/lib/db";
-import { AppError } from "@/lib/errors";
+import { route, json, preflight } from "@/shared/http";
+import { getCrawlRun } from "@/infrastructure/database";
+import { AppError } from "@/shared/errors";
 
 export const OPTIONS = preflight;
 

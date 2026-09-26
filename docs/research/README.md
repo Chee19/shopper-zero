@@ -1,5 +1,7 @@
 # ShoperZero research
 
+**Current hackathon scope:** [DECISIONS](../specs/DECISIONS.md) takes precedence. Payment research below is historical; the MVP uses Stripe test payments only. The standalone x402 report is retained as background and is not an implementation task.
+
 Research for the hackathon build, 2026-09-26. Start with **00-SYNTHESIS.md**. It holds the decisions, contracts and workstreams. The rest is supporting detail with sources; items marked UNVERIFIED still need checking.
 
 | File | What it covers |

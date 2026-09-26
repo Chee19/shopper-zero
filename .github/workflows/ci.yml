@@ -1,0 +1,34 @@
+name: CI
+
+# Quality gate: runs on every pull request and branch push, and is called by deploy.yml before
+# anything touches production. Needs no secrets (tests run without Supabase or vendor credentials).
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_call:
+
+# Only superseded PR runs are cancelled (a called workflow sees the caller's event, e.g. push).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:demo-store
+      # Integration tests start `next start`, so they need a fresh build.
+      - run: npm run build
+      - run: npm run test:integration

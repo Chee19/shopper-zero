@@ -6,32 +6,32 @@ Status: implementation spec, round 2, 2026-09-26. Audience: the coding agent or 
 
 This revision aligns 02 with `docs/specs/DECISIONS.md` (binding) and the round-2 `00-overview-and-contracts.md`. What changed since round 1:
 
-1. **New major feature, scan & score (§6)**, owned by WS2 in `src/lib/scan/**`.
+1. **New major feature, scan & score (§6)**, owned by WS2 in `src/features/scan/**`.
    - A three-method discovery cascade: `api` → `dom` → `computer_use`.
    - Output is a `ScanReport` with the Agent Readiness Score, the "after" projection and recommendations.
    - New routes `POST/GET /api/v1/scans`, and MCP tools `scan_store` / `get_scan`.
 2. **Indexing reuses the scan's best method** (§5.9 step 0, §5.10). A store reachable only by computer use is not crawled.
 3. **B1:** WS2 owns **both GET and POST** in `src/app/api/v1/stores/route.ts`. WS3 no longer touches it.
 4. **B2:** readiness is `computeReadiness(store, phase)` (00 `ComputeReadinessFn`). "Before" comes from the latest `ScanReport`. `computeReadiness(domainOrUrl)` and `computeAfterReadiness` are **removed**.
-5. **B4:** WS2 owns the registrar `registerCrawlTools(server)` in `src/lib/crawl/mcp-tools.ts`, covering `index_store`, `get_crawl_status`, `scan_store` and `get_scan`. The index/crawl tool texts come verbatim from 03 §4.5–4.6 (§8).
+5. **B4:** WS2 owns the registrar `registerCrawlTools(server)` in `src/features/crawl/mcp-tools.ts`, covering `index_store`, `get_crawl_status`, `scan_store` and `get_scan`. The index/crawl tool texts come verbatim from 03 §4.5–4.6 (§8).
 6. **B8:** `/api/mcp` has `maxDuration = 300`. The round-1 request for this is closed.
 7. **B9:** `variant.external_id` = the Woo Store API purchasable id (variation id, or product id for simple products). `product.external_id` = the Woo product id. This was already the mapping; it is now stated as binding (§5.5.1).
 8. **B11:** the error envelope and codes are 00's table (`validation_error`, `forbidden`, `not_found`, `rate_limited`, `unprocessable`, `upstream_blocked`, …). The round-1 codes `invalid_url`, `opted_out`, `blocked`, `too_many_crawls` and `internal_error` are gone.
-9. **B12:** every DB write goes through `@/lib/db` helpers. `persist.ts` is removed.
+9. **B12:** every DB write goes through `@/infrastructure/database` helpers. `persist.ts` is removed.
 10. **Aligned with 00 and 01 names:**
-    - Money and slug helpers come from `@/lib/money` / `@/lib/slug` (`normalizeStoreUrl`, `handleFromUrl`, `parsePrice`, `toMinor`, `rescaleMinor`).
+    - Money and slug helpers come from `@/shared/money` / `@/shared/slug` (`normalizeStoreUrl`, `handleFromUrl`, `parsePrice`, `toMinor`, `rescaleMinor`).
     - The variant key is `variantKey()`.
-    - Env comes via `@/lib/env` (`ALLOW_PRIVATE_STORE_HOSTS` replaces `CRAWL_ALLOW_PRIVATE_HOSTS`).
+    - Env comes via `@/shared/env` (`ALLOW_PRIVATE_STORE_HOSTS` replaces `CRAWL_ALLOW_PRIVATE_HOSTS`).
     - Readiness weights and grades are 00's `READINESS_WEIGHTS` and `gradeFor`.
     - `startStoreCrawl` replaces `submitStore`.
     - `crawlStore(storeId, crawlRunId, opts)`.
     - `CrawlRun` replaces `CrawlRunView`.
-    - Everything in `src/lib/crawl/**` and `src/lib/scan/**` is server-only (00 §4.10).
+    - Everything in `src/features/crawl/**` and `src/features/scan/**` is server-only (00 §4.10).
 11. **`ANTHROPIC_API_KEY` is now core.** The DOM recipe and computer use need it. Browserbase env is added.
 
 **Read these first, in this order:**
 1. `docs/specs/DECISIONS.md`
-2. `docs/specs/00-overview-and-contracts.md`: canonical contracts, including `src/lib/contracts/scan.ts`.
+2. `docs/specs/00-overview-and-contracts.md`: canonical contracts, including `src/contracts/scan.ts`.
 3. `docs/specs/01-foundation.md`: migration, db helpers, `money.ts`, `slug.ts`, `env.ts`, `http.ts`.
 4. This file.
 
@@ -71,7 +71,7 @@ Research background: `docs/research/04-platform-detection-and-apis.md`, `05-gene
 - T0 platform adapters (WooCommerce, Magento, Squarespace, SFCC, Shopify passthrough).
 - The T2 engine (robots → sitemaps → JSON-LD).
 - Normalization to `NormalizedProduct`.
-- Idempotent upsert through `@/lib/db`.
+- Idempotent upsert through `@/infrastructure/database`.
 - Crawl-run lifecycle and progress.
 - Readiness (`computeReadiness(store, phase)`).
 - Live offer re-verification (`verifyOffer`).
@@ -108,7 +108,7 @@ Research background: `docs/research/04-platform-detection-and-apis.md`, `05-gene
 ### 2.1 Files WS2 owns
 
 ```
-src/lib/crawl/
+src/features/crawl/
   index.ts                 # public barrel (stub created by WS1 at T+30; WS2 replaces bodies)
   mcp-tools.ts             # registerCrawlTools: index_store, get_crawl_status, scan_store, get_scan
   types.ts                 # WS2-internal types (FetchResult, DetectionResult, StoreTarget, StrategyLock, ...)
@@ -131,7 +131,7 @@ src/lib/crawl/
   verify.ts                # verifyOffer() / verifyOfferDetailed()
   __fixtures__/demo-stores.ts, __fixtures__/html/*.html, __fixtures__/api/*.json
   __tests__/*.test.ts
-src/lib/scan/
+src/features/scan/
   index.ts                 # barrel: startScan, runScan, getScanReport
   run.ts                   # cascade/full orchestration, budgets, persistence, failure handling
   browser.ts               # openBrowser(): Browserbase (CDP) or local Playwright; shared by dom + computer_use
@@ -143,7 +143,7 @@ src/lib/scan/
   estimate.ts              # seconds / USD per agent task
   guard.ts                 # stop-before-payment rules shared by dom + computer_use
   __tests__/*.test.ts
-src/lib/readiness/
+src/features/scan/readiness/
   index.ts                 # computeReadiness(store, phase)
 src/app/api/v1/stores/route.ts           # GET (list) + POST (index) + OPTIONS   (B1)
 src/app/api/v1/crawl-runs/[id]/route.ts  # GET + OPTIONS
@@ -152,8 +152,8 @@ src/app/api/v1/scans/[id]/route.ts       # GET + OPTIONS
 scripts/crawl-smoke.ts, scripts/scan-smoke.ts   # ownership requested, §15
 ```
 
-**Server-only.** Every file under `src/lib/crawl/**` and `src/lib/scan/**` starts with `import "server-only"` (00 §4.10).
-- Only `start.ts`, `run.ts` and `src/lib/scan/index.ts` (for `startScan`) import `next/server` (for `after`).
+**Server-only.** Every file under `src/features/crawl/**` and `src/features/scan/**` starts with `import "server-only"` (00 §4.10).
+- Only `start.ts`, `run.ts` and `src/features/scan/index.ts` (for `startScan`) import `next/server` (for `after`).
 - Adapters, the parsers and `pipeline.ts` must not import `next/*`, so scripts and tests can run them.
 - Scripts and tests run with the `react-server` condition (00 §4.10):
   ```bash
@@ -173,7 +173,7 @@ Node is 20.18 locally. It has global `fetch`, `DecompressionStream` and `AbortSi
 
 ### 2.3 Env vars read by WS2
 
-Read them through `@/lib/env` (`optionalEnv`, `requireEnv`, `flags`, `appUrl()`), never at module top level. Adding names to `EnvName` is requested in §15.
+Read them through `@/shared/env` (`optionalEnv`, `requireEnv`, `flags`, `appUrl()`), never at module top level. Adding names to `EnvName` is requested in §15.
 
 | Var | Default | Use |
 |---|---|---|
@@ -197,12 +197,12 @@ Read them through `@/lib/env` (`optionalEnv`, `requireEnv`, `flags`, `appUrl()`)
 
 ## 3. Public exports
 
-Other streams import only from `@/lib/crawl`, `@/lib/scan` and `@/lib/readiness`. Implementations are typed with 00 §6.7's function types.
+Other streams import only from `@/features/crawl`, `@/features/scan` and `@/lib/readiness`. Implementations are typed with 00 §6.7's function types.
 
 ```ts
-// ---- src/lib/crawl/index.ts ----
-import type { CrawlRun, Offer, PlatformAdapter, Store, StartStoreCrawlFn, CrawlStoreFn, VerifyOfferFn } from "@/lib/contracts";
-import type { ToolRegistrar } from "@/lib/mcp/types";
+// ---- src/features/crawl/index.ts ----
+import type { CrawlRun, Offer, PlatformAdapter, Store, StartStoreCrawlFn, CrawlStoreFn, VerifyOfferFn } from "@/contracts";
+import type { ToolRegistrar } from "@/infrastructure/mcp/types";
 
 /** 00 StartStoreCrawlFn, extended (optional args/fields only, so it stays assignable; CCR §15.2).
  *  Resolves/creates the store, applies scan reuse (§5.9 step 0), inserts a queued crawl_run and
@@ -221,18 +221,18 @@ export function verifyOfferDetailed(variantId: string, opts?: { maxAgeMs?: numbe
   offer: Offer; previous: Offer; source: "live" | "cache";
   changed: { price: boolean; availability: boolean };
 }>;
-export class OfferVerificationError extends AppError {   // AppError from @/lib/errors
+export class OfferVerificationError extends AppError {   // AppError from @/shared/errors
   reason: "variant_not_found" | "opted_out" | "blocked" | "unreachable" | "product_gone" | "variant_gone" | "no_price";
   lastKnown: Offer | null;
 }
 
 export const adapters: Record<"woocommerce" | "magento" | "squarespace" | "sfcc" | "shopify", PlatformAdapter>;
 
-// ---- src/lib/crawl/mcp-tools.ts ----
+// ---- src/features/crawl/mcp-tools.ts ----
 export const registerCrawlTools: ToolRegistrar;          // index_store, get_crawl_status, scan_store, get_scan (§8)
 
-// ---- src/lib/scan/index.ts ----
-import type { ScanMode, ScanReport } from "@/lib/contracts";
+// ---- src/features/scan/index.ts ----
+import type { ScanMode, ScanReport } from "@/contracts";
 /** Upserts the store, reuses an active scan (< 6 min) or inserts a queued one, schedules runScan with after(). */
 export function startScan(rawUrl: string, opts?: { mode?: ScanMode }): Promise<{
   scan_id: string; store_id: string; status_url: string; report_url: string; reused: boolean;
@@ -241,8 +241,8 @@ export function startScan(rawUrl: string, opts?: { mode?: ScanMode }): Promise<{
 export function runScan(scanId: string): Promise<ScanReport>;
 export function getScanReport(scanId: string): Promise<ScanReport | null>;   // thin wrapper over db.getScan
 
-// ---- src/lib/readiness/index.ts ----
-import type { ComputeReadinessFn } from "@/lib/contracts";
+// ---- src/features/scan/readiness/index.ts ----
+import type { ComputeReadinessFn } from "@/contracts";
 export const computeReadiness: ComputeReadinessFn;       // (store, phase: "before" | "after") => Promise<ReadinessReport>
 ```
 
@@ -330,7 +330,7 @@ export function canonicalizeProductUrl(u: string, base: string): string;
   1. Resolve against the base and drop the `#fragment`.
   2. Remove `utm_*`, `gclid`, `fbclid`, `_pos`, `_sid`, `_ss`, `srsltid` and `ref`. Keep all other params.
   3. Remove a trailing `/` unless the path is `/`.
-- **Handles** come from `handleFromUrl` in `@/lib/slug` (WS1, deterministic).
+- **Handles** come from `handleFromUrl` in `@/shared/slug` (WS1, deterministic).
 - **Redirects.** If the homepage redirects to another host (apex → www), `updateStore(id, { metadata })` records it, but `domain` and `base_url` are WS1-owned identity fields. Ask WS1 to allow `base_url` in `StorePatch` (§15.4).
 
 ### 5.2 `fetch.ts`: the polite fetcher
@@ -366,7 +366,7 @@ export function createFetcher(opts: {
 
 **Behavior. Implement it exactly like this.**
 
-1. **User agent.** Use `flags.crawlerUserAgent()` from `@/lib/env` (env `CRAWLER_USER_AGENT`; 00 §4.7 default `ShoperZeroBot/0.1 (+https://<app>/bot)`).
+1. **User agent.** Use `flags.crawlerUserAgent()` from `@/shared/env` (env `CRAWLER_USER_AGENT`; 00 §4.7 default `ShoperZeroBot/0.1 (+https://<app>/bot)`).
    - The UA always identifies ShoperZeroBot. We never send a spoofed browser UA in HTTP fetching; synthesis risk #8 requires an identifiable UA. The browser probes identify themselves with the `X-ShoperZero-Scan` header (§6.4).
    - Default headers:
      - `Accept` by kind:
@@ -614,7 +614,7 @@ GET {A}/products?per_page=100&page={N}&orderby=date&order=desc
 |---|---|---|
 | `external_id` | `String(id)` | |
 | `url` | `permalink` | `canonicalizeProductUrl` |
-| `handle` | `slug` | Fallback: `handleFromUrl(permalink)` from `@/lib/slug`. |
+| `handle` | `slug` | Fallback: `handleFromUrl(permalink)` from `@/shared/slug`. |
 | `title` | `name` | `decodeEntities`; names contain `&#8211;` etc. |
 | `description_html` | `description` or `short_description` | |
 | `description_text` | `htmlToText(description_html)` | |
@@ -649,7 +649,7 @@ GET {A}/products?per_page=100&page={N}&orderby=date&order=desc
 **Woo money.** Woo prices are **strings in the store's configured minor unit**, and that unit can differ from ISO. porterandyork uses `currency_minor_unit: 0` for USD, so `"115"` means $115.
 
 ```ts
-import { rescaleMinor } from "@/lib/money";   // WS1: store minor unit → ISO exponent
+import { rescaleMinor } from "@/shared/money";   // WS1: store minor unit → ISO exponent
 function wooMoney(amount: string, p: { currency_code: string; currency_minor_unit: number }): Money {
   const currency = p.currency_code.toUpperCase();
   return { amount: rescaleMinor(amount, p.currency_minor_unit, currency), currency };
@@ -665,8 +665,8 @@ function wooMoney(amount: string, p: { currency_code: string; currency_minor_uni
 **Code sketch (pagination):**
 
 ```ts
-// src/lib/crawl/adapters/woocommerce.ts
-import type { CrawlContext, NormalizedProduct, PlatformAdapter } from "@/lib/contracts";
+// src/features/crawl/adapters/woocommerce.ts
+import type { CrawlContext, NormalizedProduct, PlatformAdapter } from "@/contracts";
 import { getJson } from "../fetch";
 import { AdapterError } from "../errors";
 import { finalizeProduct } from "../normalize";
@@ -988,9 +988,9 @@ Stretch T4 adds Firecrawl `map` here.
 **Code sketch:**
 
 ```ts
-// src/lib/crawl/sitemap.ts
+// src/features/crawl/sitemap.ts
 import { XMLParser } from "fast-xml-parser";
-import type { Platform } from "@/lib/contracts";
+import type { Platform } from "@/contracts";
 import type { Fetcher } from "./fetch";
 import type { RobotsInfo } from "./robots";
 import type { StoreTarget } from "./url";
@@ -1109,7 +1109,7 @@ export function parseJsonLdNodes(html: string): Record<string, unknown>[];   // 
      - `listSpec` = the spec whose `priceType` matches `/StrikethroughPrice|ListPrice|MSRP|SRP/i`.
      - `saleSpec` = the first other spec that has a `price`.
    - **compare_at** = `listSpec.price` if it is greater than the price.
-   - **Price parse:** `parsePrice(raw, currency)` from `@/lib/money` (WS1). It treats a lone `.` as the decimal separator, which matches schema.org. Values ≤ 0 or unparseable count as missing ("call for price").
+   - **Price parse:** `parsePrice(raw, currency)` from `@/shared/money` (WS1). It treats a lone `.` as the decimal separator, which matches schema.org. Values ≤ 0 or unparseable count as missing ("call for price").
    - **Currency:** `offer.priceCurrency ?? saleSpec?.priceCurrency ?? listSpec?.priceCurrency ?? inheritedCurrency ?? pageMetaCurrency ?? opts.defaultCurrency`.
      - `pageMetaCurrency` = `meta[itemprop=priceCurrency]` or `meta[property="product:price:currency"]`.
      - Uppercase it and require `/^[A-Z]{3}$/`.
@@ -1153,10 +1153,10 @@ export function parseJsonLdNodes(html: string): Record<string, unknown>[];   // 
 **Code sketch (core):**
 
 ```ts
-// src/lib/crawl/jsonld.ts
+// src/features/crawl/jsonld.ts
 import * as cheerio from "cheerio";
-import type { Availability, Money, NormalizedProduct, NormalizedVariant } from "@/lib/contracts";
-import { parsePrice } from "@/lib/money";
+import type { Availability, Money, NormalizedProduct, NormalizedVariant } from "@/contracts";
+import { parsePrice } from "@/shared/money";
 import { decodeEntities, finalizeProduct } from "./normalize";
 import { canonicalizeProductUrl } from "./url";
 
@@ -1340,7 +1340,7 @@ export function modeCurrency(products: NormalizedProduct[]): string | null;
 5. **Variants:**
    - Drop a variant when its `offer.price` is missing, not a non-negative integer, or its currency fails `/^[A-Z]{3}$/`. If none remain, return `{ok:false, reason:"no_price"}`.
    - `external_id` may stay `null`. The DB key is `variantKey()` (00 §4.2: source id, then `sku:`, then `opt:`, then `default`, with duplicates suffixed `~2`).
-   - Within one product, dedupe variants by `variantKey(v)` from `@/lib/db/upsert-row`; the first one wins.
+   - Within one product, dedupe variants by `variantKey(v)` from `@/infrastructure/database/upsert-row`; the first one wins.
    - An empty title becomes `Object.values(options).join(" / ") || "Default Title"`.
    - `offer.checked_at` is required; it defaults to now as ISO.
 6. **Options:** when `draft.options` is empty, derive them from the union of the variants' option keys, with values in first-seen order. Keep ≤ 10.
@@ -1475,7 +1475,7 @@ export const crawlStore: CrawlStoreFn = async (storeId, crawlRunId, opts = {}) =
 7. **Finalize** (in `finally`):
    - Flush the product buffer and the progress writer.
    - `stats = await db.getIndexStats(storeId)` (B12; shape requested in §15.3).
-   - **Checkout connector:** `resolveCheckoutConnector({ domain: store.domain, platform })`, imported from `@/lib/checkout/connectors` (WS4, B10). Also write the legacy `checkout_methods = [connector]` if `StorePatch` supports it.
+   - **Checkout connector:** `resolveCheckoutConnector({ domain: store.domain, platform })`, imported from `@/features/checkout/connectors` (WS4, B10). Also write the legacy `checkout_methods = [connector]` if `StorePatch` supports it.
    - **Store update:** `db.updateStore(id, { status, platform, currency, name: store.name ?? siteName, strategy, checkout_connector, last_crawled_at: now, metadata })`. `status` is:
      - `blocked` for a blocked result, with `metadata.block_reason`;
      - otherwise `indexed` when `stats.product_count > 0`, even after a failed re-crawl;
@@ -1542,7 +1542,7 @@ WS4 guidance (a recommendation, not enforced here):
 
 ---
 
-## 6. Scan & score (`src/lib/scan/**`)
+## 6. Scan & score (`src/features/scan/**`)
 
 The entry experience (DECISIONS A):
 1. A visitor pastes a URL.
@@ -1550,7 +1550,7 @@ The entry experience (DECISIONS A):
 3. We report an **Agent Readiness Score**, with per-method seconds and USD per agent task.
 4. We offer "Make it agent-ready", which runs indexing (§5).
 
-Types come from `@/lib/contracts` (`scan.ts`, owned by WS1): `AccessMethod`, `ProbeStatus`, `Capabilities`, `ProbeSignal`, `DomRecipe`, `AccessProbe`, `ScanMode`, `ScanStatus`, `ScanReport`. Their names are used exactly.
+Types come from `@/contracts` (`scan.ts`, owned by WS1): `AccessMethod`, `ProbeStatus`, `Capabilities`, `ProbeSignal`, `DomRecipe`, `AccessProbe`, `ScanMode`, `ScanStatus`, `ScanReport`. Their names are used exactly.
 
 ### 6.1 Definitions
 
@@ -1584,7 +1584,7 @@ Types come from `@/lib/contracts` (`scan.ts`, owned by WS1): `AccessMethod`, `Pr
 ### 6.2 Shared probe context
 
 ```ts
-// src/lib/scan/run.ts (internal)
+// src/features/scan/run.ts (internal)
 export interface ProbeContext {
   scanId: string;
   store: Store;
@@ -1661,7 +1661,7 @@ Both `dom` verification and `computer_use` need a real Chromium.
 | Neither available | none | `dom` stage C is replaced by HTTP-only verification (§6.5). `computer_use` becomes `skipped` with `error.code = "no_browser"`. |
 
 ```ts
-// src/lib/scan/browser.ts
+// src/features/scan/browser.ts
 import { chromium, type Page, type BrowserContext } from "playwright-core";
 import Browserbase from "@browserbasehq/sdk";
 
@@ -1756,7 +1756,7 @@ The budget is **70 s** in three stages: A 20 s, B 20 s, C 30 s.
 3. **One model call.** `SCAN_MODEL` defaults to `claude-opus-5-5`, with low effort because this is an extraction task. The request uses structured output plus server-side refusal fallbacks:
 
 ```ts
-// src/lib/scan/probes/dom.ts (recipe stage)
+// src/features/scan/probes/dom.ts (recipe stage)
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
@@ -1921,7 +1921,7 @@ After each non-screenshot action, run `page.waitForLoadState("domcontentloaded",
 **Loop sketch:**
 
 ```ts
-// src/lib/scan/probes/computer-use.ts
+// src/features/scan/probes/computer-use.ts
 import Anthropic from "@anthropic-ai/sdk";
 
 const COMPUTER = { type: "computer_toolset_20260801", configs: {
@@ -2183,7 +2183,7 @@ The crawl also refreshes `scans.after` with the actual score (§5.10 step 7).
 
 ## 7. API routes
 
-All handlers use WS1's `src/lib/http.ts`: `route(name, handler)`, `json`, `parseJsonBody`, `parseSearchParams`, `preflight`. Errors are `AppError` (`src/lib/errors.ts`), which `route()` turns into 00's envelope `{ error: { code, message, details?, request_id } }` (B11). Every file exports `OPTIONS = preflight`. CORS and `Request-Id` come from `http.ts`.
+All handlers use WS1's `src/shared/http.ts`: `route(name, handler)`, `json`, `parseJsonBody`, `parseSearchParams`, `preflight`. Errors are `AppError` (`src/shared/errors.ts`), which `route()` turns into 00's envelope `{ error: { code, message, details?, request_id } }` (B11). Every file exports `OPTIONS = preflight`. CORS and `Request-Id` come from `http.ts`.
 
 **Error codes used by WS2 routes** (00's table only):
 
@@ -2201,9 +2201,9 @@ All handlers use WS1's `src/lib/http.ts`: `route(name, handler)`, `json`, `parse
 ### 7.1 `src/app/api/v1/stores/route.ts`: GET + POST (WS2 owns both, B1)
 
 ```ts
-import { route, json, parseJsonBody, parseSearchParams, preflight } from "@/lib/http";
-import { listStores } from "@/lib/db";
-import { startStoreCrawl } from "@/lib/crawl";
+import { route, json, parseJsonBody, parseSearchParams, preflight } from "@/shared/http";
+import { listStores } from "@/infrastructure/database";
+import { startStoreCrawl } from "@/features/crawl";
 export const maxDuration = 300;                     // after() crawl scheduling
 export const OPTIONS = preflight;
 
@@ -2321,7 +2321,7 @@ export const POST = route("scans.create", async (req, _ctx, { requestId }) => {
 
 ---
 
-## 8. MCP registrar: `registerCrawlTools` (`src/lib/crawl/mcp-tools.ts`)
+## 8. MCP registrar: `registerCrawlTools` (`src/features/crawl/mcp-tools.ts`)
 
 WS3's `/api/mcp` route composes the registrars (B4, 00 §6.9). WS2 registers exactly four tools with `server.registerTool(name, { title, description, inputSchema, annotations }, handler)`. The handlers return 00's `toolResult(structured, summary)` and catch with `toolError(err, tool)`. **`structuredContent` equals the REST twin's body.**
 
@@ -2391,7 +2391,7 @@ export const registerCrawlTools: ToolRegistrar = (server) => {
 
 ---
 
-## 9. Readiness: `computeReadiness(store, phase)` (`src/lib/readiness/index.ts`, B2)
+## 9. Readiness: `computeReadiness(store, phase)` (`src/features/scan/readiness/index.ts`, B2)
 
 ```ts
 export const computeReadiness: ComputeReadinessFn = async (store, phase) => { … };   // (Store, "before" | "after") => Promise<ReadinessReport>
@@ -2423,7 +2423,7 @@ The crawl writes `before` (scan-derived) and `after` through `db.setStoreReadine
 
 ---
 
-## 10. Demo fixtures (`src/lib/crawl/__fixtures__/demo-stores.ts`)
+## 10. Demo fixtures (`src/features/crawl/__fixtures__/demo-stores.ts`)
 
 ```ts
 export interface DemoStoreFixture {
@@ -2473,7 +2473,7 @@ A real store that is JS-only, has no structured data **and** no bot wall is hard
 
 Run:
 ```bash
-node --conditions=react-server --import tsx --test src/lib/crawl/__tests__/*.test.ts src/lib/scan/__tests__/*.test.ts
+node --conditions=react-server --import tsx --test src/features/crawl/__tests__/*.test.ts src/features/scan/__tests__/*.test.ts
 ```
 
 | File | Asserts |
@@ -2571,7 +2571,7 @@ Times are relative to the start. Scan comes early because it is the primary land
 These are additive requests. Where DECISIONS or 00 already cover something, the item says **confirm**.
 
 1. **WS1 contracts:**
-   - (a) Confirm `src/lib/contracts/scan.ts` exactly as in DECISIONS A.
+   - (a) Confirm `src/contracts/scan.ts` exactly as in DECISIONS A.
    - (b) Add `ScanStoreInputSchema` and `GetScanInputSchema` (§8) to `mcp.ts` and `MCP_TOOL_INPUTS`.
    - (c) Add `ScanStartResult = { scan_id: string; store_id: string; status_url: string; report_url: string }` and `IndexStoreResult = { store: Store; crawl_run_id: string; status: CrawlRunStatus; reused: boolean; cached: boolean }`, and make `IndexStoreOutput = IndexStoreResult`.
    - (d) Confirm `CrawlLogEntry = { at, level, msg, step?: CrawlStep, data? }`, with `CrawlStep` exported.
@@ -2621,8 +2621,8 @@ These are additive requests. Where DECISIONS or 00 already cover something, the 
    - (b) Remove 03 §4.5–4.6 (index_store and get_crawl_status), which now live here, and stop calling `submitStore` or `getCrawlRunView`, which no longer exist.
    - (c) `list_stores` keeps calling `db.listStores()`, the same data as `GET /api/v1/stores`.
 10. **WS4:**
-    - (a) `resolveCheckoutConnector` must stay importable from `@/lib/checkout/connectors` without pulling in payment modules (WS2 calls it at crawl finalize).
-    - (b) The stretch `browser` connector reads `stores.dom_recipe`, and should reuse `src/lib/scan/guard.ts` if it ever runs on third-party stores.
+    - (a) `resolveCheckoutConnector` must stay importable from `@/features/checkout/connectors` without pulling in payment modules (WS2 calls it at crawl finalize).
+    - (b) The stretch `browser` connector reads `stores.dom_recipe`, and should reuse `src/features/scan/guard.ts` if it ever runs on third-party stores.
 11. **WS5:**
     - (a) The scan page renders the three `AccessProbe` cards from `scans.probes`: status, signals, capabilities, `est_*`, and the streamed `screenshots`/`steps` for computer use.
     - (b) "Make it agent-ready" calls `POST /api/v1/stores {store_id}`, and shows 422 `unprocessable` as "Reachable by computer use only".

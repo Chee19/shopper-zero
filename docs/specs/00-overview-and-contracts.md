@@ -4,13 +4,17 @@ Status: **canonical**. Specs 01–05 build on this file. Where this file and `do
 
 Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_modules/next/dist/docs/` before writing any route handler, `proxy.ts` change, `after()` call or segment config.
 
+## MVP scope
+
+Stripe test payments are the only payment rail. See DECISIONS.md for the current scope and TEAM-SPLIT.md for the event deadlines.
+
 ## Round-2 changes
 
 `docs/specs/DECISIONS.md` is binding and overrides any text here that disagrees with it. This file folds it in as follows:
 
-- **Scan and score (DECISIONS §A).** New contract file `src/lib/contracts/scan.ts` (§6.5a), exported from the barrel. `Store` gains `best_method`, `dom_recipe`, `latest_scan_id` (and `claimed_at`, WS5 CCR-8). New `scans` table, `stores` columns and the public `scan-screenshots` storage bucket (spec 01 §4). New routes `POST /api/v1/scans`, `GET /api/v1/scans/{id}` and MCP tools `scan_store`, `get_scan` (all WS2). New env vars (§4.7). The demo now opens with scan and score (§2).
-- **Ownership (B1, B4, WS3 CR-3, WS5 CCR-9).** WS2 owns `src/lib/scan/**`, `src/app/api/v1/scans/**`, and both `GET` and `POST` in `src/app/api/v1/stores/route.ts`. Registrars are per stream and `/api/mcp` composes them behind WS3's `instrumentServer` (§3.3, §6.9).
-- **Contract changes (B5, B7, B9, B11, B14, WS4 CCR-W4-8).** `CheckoutEventData` (§6.6); `timeline_url` message code; `CrawlLogEntry` is `{at, step?, level, msg, data?}` (capped at 50); MCP/REST catalog outputs use the UCP product shape (`?format=indexed` for `IndexedProduct`); `get_product` accepts `catalog.selected`; the x402 pay route is `POST /api/v1/checkouts/{id}/pay/x402`; Woo id mapping is pinned (§4.2). `CheckoutState` already had `handoff` and `quote()` already took `QuoteInput`.
+- **Scan and score (DECISIONS §A).** New contract file `src/contracts/scan.ts` (§6.5a), exported from the barrel. `Store` gains `best_method`, `dom_recipe`, `latest_scan_id` (and `claimed_at`, WS5 CCR-8). New `scans` table, `stores` columns and the public `scan-screenshots` storage bucket (spec 01 §4). New routes `POST /api/v1/scans`, `GET /api/v1/scans/{id}` and MCP tools `scan_store`, `get_scan` (all WS2). New env vars (§4.7). The demo now opens with scan and score (§2).
+- **Ownership (B1, B4, WS3 CR-3, WS5 CCR-9).** WS2 owns `src/features/scan/**`, `src/app/api/v1/scans/**`, and both `GET` and `POST` in `src/app/api/v1/stores/route.ts`. Registrars are per stream and `/api/mcp` composes them behind WS3's `instrumentServer` (§3.3, §6.9).
+- **Contract changes (B5, B7, B9, B11, B14, WS4 CCR-W4-8).** `CheckoutEventData` (§6.6); `timeline_url` message code; `CrawlLogEntry` is `{at, step?, level, msg, data?}` (capped at 50); MCP/REST catalog outputs use the UCP product shape (`?format=indexed` for `IndexedProduct`); `get_product` accepts `catalog.selected`; Woo id mapping is pinned (§4.2). `CheckoutState` already had `handoff` and `quote()` already took `QuoteInput`.
 - **db helpers (B12, 02 §15.3).** Adds `rowToStore`, `findProducts`, `getIndexStats`, `getScan`, `upsertScan`, `claimScan`, `getLatestScanForStore`, `getActiveScanForStore`, `countActiveScans`, `supersedeScans`, `uploadScanScreenshot`, `claimCrawlRun`, `getActiveCrawlRun`, `countActiveCrawlRuns`, `getVariantForVerify`, `getOrCreateClaim`, and WS2 CCR-1's `upsertStoreProducts` semantics (variants are never deleted, per-product failures are reported, unchanged products are skipped) (§6.10).
 - **Error envelope (B11).** Unchanged: `{error: {code, message, details?}}` with the §4.4 code table. Stream-specific reasons go in `details.reason` (§4.4).
 
@@ -21,7 +25,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 1. ShoperZero makes any non-Shopify store agent-ready in about 60 seconds, with no plugin and no replatforming.
 2. Paste a store URL and hit **Scan**. A discovery agent tries three access methods in order (`api` → `dom` → `computer_use`), stops at the first that works, and shows an **Agent Readiness Score** with the cost and time per agent task. "Make it agent-ready" then indexes the store with the best method found: we detect the platform, pull the catalog the cheapest way that works (platform API, then sitemap + JSON-LD / DOM recipe), and normalize it into Supabase.
 3. From that single index we serve what Shopify stores get for free: a Shopify-compatible `products.json`, a UCP profile (`/.well-known/ucp`), an MCP server that uses Shopify's catalog tool names, an ACP feed, and `llms.txt`.
-4. Agents can also buy. They pay ShoperZero with a Stripe Shared Payment Token (test mode) or x402 USDC (Base Sepolia), and we place the order through the store's own API (WooCommerce Store API). Stores we can't transact against headlessly get an honest `requires_escalation` hand-off with a prefilled-cart `continue_url`.
+4. Agents can also buy. They pay ShoperZero with a Stripe Shared Payment Token (test mode), and we place the order through the store's own API (WooCommerce Store API). Stores we can't transact against headlessly get an honest `requires_escalation` hand-off with a prefilled-cart `continue_url`.
 5. Merchants can claim a store (DNS TXT or meta tag) for a verified badge, or opt out. Positioning: "Cloudflare for agentic commerce: UCP for the other 80% of the web."
 
 ## 2. The 2-minute demo
@@ -33,7 +37,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 | 0:35 | **Make it agent-ready.** One click on the CTA starts indexing with the best method found. The product counter ticks and the grade goes to **A**. Repeat quickly for `www.bulk.com/uk` (Magento) or a JSON-LD store. | `POST /api/v1/stores {store_id}`, crawl in `after()`, Realtime on `crawl_runs` + `stores` |
 | 0:50 | **Outputs.** Open `/s/{slug}/products.json`, `/s/{slug}/llms.txt`, `/.well-known/ucp`. | WS3 index outputs |
 | 1:00 | **Claude buys.** Claude is connected to `https://<app>/api/mcp`. Prompt: "find me a hoodie under $50 across these stores and buy it." Claude calls `search_catalog` → `get_product` → `create_checkout` (live Woo quote) → `complete_checkout` with an SPT. The timeline streams in our UI. | MCP + checkout service + Stripe rail + Realtime on `checkout_events` |
-| 1:30 | **Proof.** The order is in WooCommerce admin with the payment reference in its note. Optional: a second run with x402 shows the tx hash on BaseScan. | Woo connector, x402 rail |
+| 1:30 | **Proof.** The order is in WooCommerce admin with the payment reference in its note. | Woo connector, Stripe test payment |
 | 1:45 | **Honesty + claim.** For the Magento store, checkout returns `requires_escalation` with a prefilled cart link. The merchant claims the store. Close. | `handoff` connector, claim flow |
 
 ---
@@ -56,7 +60,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 ├── scripts/agent-*.ts                       (WS4)
 ├── scripts/crawl-*.ts, scripts/scan-*.ts    (WS2)
 ├── infra/fixtures/js-shop/                  (WS2: JS-only shop for the browser probes)
-├── scripts/db-smoke.ts                      (WS1)
+├── scripts/db/smoke.ts                      (WS1)
 ├── supabase/
 │   ├── config.toml                          (WS1)
 │   ├── seed.sql                             (WS1)
@@ -91,7 +95,6 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
     │           ├── scans/route.ts, scans/[id]/route.ts   (WS2: POST, GET)
     │           ├── checkouts/route.ts, checkouts/[id]/route.ts,
     │           │   checkouts/[id]/{complete,cancel}/route.ts,
-    │           │   checkouts/[id]/pay/x402/route.ts   (WS4)
     │           ├── orders/[id]/route.ts               (WS4)
     │           ├── claims/**                          (WS5)
     │           └── ui/**                              (WS5: UI-only helpers, not agent-facing)
@@ -116,39 +119,39 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 
 | Stream | Owns |
 |---|---|
-| **WS1** Foundation | `supabase/migrations/20260926010000_core.sql` (incl. `scans`, the `stores` scan columns and the `scan-screenshots` bucket), `src/lib/contracts/**` (incl. `scan.ts`), `src/lib/db/**` (typed repo functions, full list in §6.10: `upsertStoreProducts`, `getProduct`, `findProducts`, `searchProducts`, `getStoreBySlug`, `getStoreById`, `rowToStore`, `listStores`, `listStoreProducts`, `getLatestCrawlRun`, `getIndexStats`, `getScan`, `upsertScan`, `getLatestScanForStore`, `logAgentRequest`…), `src/lib/money.ts`, `src/lib/slug.ts`, `src/proxy.ts` (matcher only), `.env.example`, `supabase/seed.sql` |
-| **WS2** Ingestion + scan | `infra/fixtures/js-shop/**`, `src/lib/crawl/**` (`fetch.ts` polite fetch + robots, `detect.ts`, `adapters/{woocommerce,magento,squarespace,sfcc,shopify}.ts`, `sitemap.ts`, `jsonld.ts`, `normalize.ts`, `run.ts`, `mcp-tools.ts`), **`src/lib/scan/**`** (`probes/api.ts`, `probes/dom.ts`, `probes/computer-use.ts`, `score.ts`, `run.ts`; `computer-use.ts` can be handed to a third person), `src/lib/readiness/**`, `src/app/api/v1/stores/route.ts` (**GET and POST**), `src/app/api/v1/crawl-runs/**`, **`src/app/api/v1/scans/**`**, `scripts/crawl-*.ts`, `scripts/scan-*.ts` |
-| **WS3** Agent surface | `src/app/api/mcp/route.ts` (composes the registrars), `src/lib/mcp/**` (`result.ts`, `types.ts`, `instrument.ts`, `instructions.ts`, `tools/catalog.ts`), `src/lib/agent/**`, `src/app/api/v1/{search,products}/**`, `src/app/api/v1/stores/[slug]/route.ts`, `src/app/s/[slug]/**` (route handlers: `products.json`, `products/[handle].json`, `feed.acp.jsonl`, `llms.txt`, `.well-known/ucp`), `src/app/llms.txt/`, `src/app/.well-known/**` (incl. `ucp/[version]`), `src/app/openapi.json/`, `src/app/robots.ts`, `src/lib/formats/{shopify,ucp,acp,llms,permalink,openapi,agent-card,text}.ts` (serializers from `IndexedProduct`) |
-| **WS4** Checkout & payments | `src/lib/checkout/**` (`service.ts`, `state.ts` with `transition()`, `connectors/{index,woo,handoff}.ts` incl. `resolveCheckoutConnector()`, `mcp-tools.ts`), `src/lib/payments/**` (`stripe.ts` using `fetch` + a `Stripe-Version` header for preview endpoints, `x402.ts`), `src/app/api/v1/checkouts/**` (incl. `[id]/pay/x402`), `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`, `infra/woo/` (`docker-compose.woo.yml`, setup script), `scripts/agent-*.ts`, `supabase/migrations/20260926024000_ws4_checkout.sql` |
+| **WS1** Foundation | `supabase/migrations/20260926010000_core.sql` (incl. `scans`, the `stores` scan columns and the `scan-screenshots` bucket), `src/contracts/**` (incl. `scan.ts`), `src/infrastructure/database/**` (typed repo functions, full list in §6.10: `upsertStoreProducts`, `getProduct`, `findProducts`, `searchProducts`, `getStoreBySlug`, `getStoreById`, `rowToStore`, `listStores`, `listStoreProducts`, `getLatestCrawlRun`, `getIndexStats`, `getScan`, `upsertScan`, `getLatestScanForStore`, `logAgentRequest`…), `src/shared/money.ts`, `src/shared/slug.ts`, `src/proxy.ts` (matcher only), `.env.example`, `supabase/seed.sql` |
+| **WS2** Ingestion + scan | `infra/fixtures/js-shop/**`, `src/features/crawl/**` (`fetch.ts` polite fetch + robots, `detect.ts`, `adapters/{woocommerce,magento,squarespace,sfcc,shopify}.ts`, `sitemap.ts`, `jsonld.ts`, `normalize.ts`, `run.ts`, `mcp-tools.ts`), **`src/features/scan/**`** (`probes/api.ts`, `probes/dom.ts`, `probes/computer-use.ts`, `score.ts`, `run.ts`; `computer-use.ts` can be handed to a third person), `src/features/scan/readiness/**`, `src/app/api/v1/stores/route.ts` (**GET and POST**), `src/app/api/v1/crawl-runs/**`, **`src/app/api/v1/scans/**`**, `scripts/crawl-*.ts`, `scripts/scan-*.ts` |
+| **WS3** Agent surface | `src/app/api/mcp/route.ts` (composes the registrars), `src/infrastructure/mcp/**` (`result.ts`, `types.ts`, `instrument.ts`, `instructions.ts`, `tools/catalog.ts`), `src/features/catalog/**`, `src/app/api/v1/{search,products}/**`, `src/app/api/v1/stores/[slug]/route.ts`, `src/app/s/[slug]/**` (route handlers: `products.json`, `products/[handle].json`, `feed.acp.jsonl`, `llms.txt`, `.well-known/ucp`), `src/app/llms.txt/`, `src/app/.well-known/**` (incl. `ucp/[version]`), `src/app/openapi.json/`, `src/app/robots.ts`, `src/features/catalog/formats/{shopify,ucp,acp,llms,permalink,openapi,agent-card,text}.ts` (serializers from `IndexedProduct`) |
+| **WS4** Checkout & payments | `src/features/checkout/**` (`service.ts`, `state.ts` with `transition()`, `connectors/{index,woo,handoff}.ts` incl. `resolveCheckoutConnector()`, `mcp-tools.ts`), `src/features/checkout/payments/**` (`stripe.ts` using `fetch` + a `Stripe-Version` header for preview endpoints), `src/app/api/v1/checkouts/**`, `src/app/api/v1/orders/**`, `src/app/api/demo-wallet/**`, `infra/woo/` (`docker-compose.woo.yml`, setup script), `scripts/agent-*.ts`, `supabase/migrations/20260926024000_ws4_checkout.sql` |
 | **WS5** Web UI & demo | `src/app/page.tsx` (scan-first landing), `src/app/(site)/**` (incl. `/scan/[id]` live cascade + score report, `/bot`), `src/components/**`, `src/app/layout.tsx`/`globals.css`, `src/app/api/v1/claims/**`, `src/app/api/v1/ui/**` (UI-only helpers, not in `openapi.json`), `docs/demo/**`, `mock/` |
 
 ### 3.3 Clarifications to the map (binding)
 
-1. **WS1 also owns** the new shared helpers `src/lib/errors.ts`, `src/lib/http.ts`, `src/lib/log.ts`, `src/lib/env.ts`, plus `scripts/db-smoke.ts`. It is the gatekeeper for `package.json`, `next.config.ts`, `tsconfig.json`, `supabase/config.toml` and `src/lib/supabase/**`.
+1. **WS1 also owns** the new shared helpers `src/shared/errors.ts`, `src/shared/http.ts`, `src/shared/log.ts`, `src/shared/env.ts`, plus `scripts/db/smoke.ts`. It is the gatekeeper for `package.json`, `next.config.ts`, `tsconfig.json`, `supabase/config.toml` and `src/infrastructure/supabase/**`.
 2. **MCP registrars live with the stream that owns the logic (B4).** The MCP route (WS3) only composes registrars, all behind WS3's `instrumentServer(server)`:
-   - `registerCatalogTools` in `src/lib/mcp/tools/catalog.ts` (WS3): `list_stores`, `search_catalog`, `lookup_catalog`, `get_product`.
-   - `registerCrawlTools` in `src/lib/crawl/mcp-tools.ts` (WS2): `index_store`, `get_crawl_status`, `scan_store`, `get_scan`. The tool schemas WS3 wrote in round 1 move verbatim into spec 02.
-   - `registerCheckoutTools` in `src/lib/checkout/mcp-tools.ts` (WS4): `create_checkout`, `update_checkout`, `get_checkout`, `complete_checkout`, `cancel_checkout`, `get_order`. WS3 never registers `get_order` itself (a duplicate name throws at startup).
-   - `registerDemoWalletTools` in `src/lib/payments/demo-wallet-tools.ts` (WS4), mounted only on `/api/demo-wallet/mcp`.
-   - `instrumentServer(server)` in `src/lib/mcp/instrument.ts` (WS3) runs **first** and wraps every `registerTool` call from all three registrars. It is the **only** place MCP tool calls are logged to `agent_requests` (and rate-limited). WS2 and WS4 registrars must not call `logAgentRequest` themselves. REST routes still log themselves.
+   - `registerCatalogTools` in `src/infrastructure/mcp/tools/catalog.ts` (WS3): `list_stores`, `search_catalog`, `lookup_catalog`, `get_product`.
+   - `registerCrawlTools` in `src/features/crawl/mcp-tools.ts` (WS2): `index_store`, `get_crawl_status`, `scan_store`, `get_scan`. The tool schemas WS3 wrote in round 1 move verbatim into spec 02.
+   - `registerCheckoutTools` in `src/features/checkout/mcp-tools.ts` (WS4): `create_checkout`, `update_checkout`, `get_checkout`, `complete_checkout`, `cancel_checkout`, `get_order`. WS3 never registers `get_order` itself (a duplicate name throws at startup).
+   - `registerDemoWalletTools` in `src/features/checkout/payments/demo-wallet-tools.ts` (WS4), mounted only on `/api/demo-wallet/mcp`.
+   - `instrumentServer(server)` in `src/infrastructure/mcp/instrument.ts` (WS3) runs **first** and wraps every `registerTool` call from all three registrars. It is the **only** place MCP tool calls are logged to `agent_requests` (and rate-limited). WS2 and WS4 registrars must not call `logAgentRequest` themselves. REST routes still log themselves.
 
-   This supersedes the synthesis line "checkout tools delegating to WS4's service" in `src/lib/mcp/**`. Registrar type: `ToolRegistrar` in `src/lib/mcp/types.ts` (see §6.9).
+   This supersedes the synthesis line "checkout tools delegating to WS4's service" in `src/infrastructure/mcp/**`. Registrar type: `ToolRegistrar` in `src/infrastructure/mcp/types.ts` (see §6.9).
 3. **`src/app/api/v1/stores/route.ts` is one file (B1).** WS2 owns it and implements **both** `POST` (submit) and `GET` (list). WS3 does not touch it. GET is a thin call to `db.listStores()` that returns `{ stores: StoreSummary[] }`, the same body as the `list_stores` MCP tool. POST accepts `{ url }` **or** `{ store_id }`, plus `force?: boolean`. It reuses the store's latest scan to pick the indexing method (DECISIONS §A), returns **200** with `IndexStoreResult` (`cached: true`) when the store is `indexed`, was crawled less than 6 h ago and `!force`, and otherwise **202** with `IndexStoreResult` (`{ store, crawl_run_id, status, reused, cached }`, WS5 CCR-3 + 02 §15). A store reachable by computer use only returns **422** `unprocessable`.
 3a. **Scan routes (DECISIONS §A).** `POST /api/v1/scans` `{ url, mode? }` → **202** `ScanStartResult` `{ scan_id, store_id, status_url, report_url }` (the scan runs in `after()`; `maxDuration = 300`). `GET /api/v1/scans/{id}` → `ScanReport`. Both WS2. The UI follows the scan via Realtime on `scans`. After a scan, indexing maps `best_method` `api` → platform adapter and `dom` → sitemap + JSON-LD / DOM recipe. `computer_use` does not index a catalog: the store is marked reachable by computer use only.
-3b. **Checkout connector choice (B10).** Everyone calls `resolveCheckoutConnector(store)` from `@/lib/checkout/connectors` (WS4) to compute `stores.checkout_connector` and `IndexedProduct.checkout_methods`. Only allowlisted Woo stores get `woo_store_api`; all others get `handoff`. The checkout service always resolves again, so `stores.checkout_connector` is display only.
+3b. **Checkout connector choice (B10).** Everyone calls `resolveCheckoutConnector(store)` from `@/features/checkout/connectors` (WS4) to compute `stores.checkout_connector` and `IndexedProduct.checkout_methods`. Only allowlisted Woo stores get `woo_store_api`; all others get `handoff`. The checkout service always resolves again, so `stores.checkout_connector` is display only.
 4. **T+30 stub files.** In the contracts commit, WS1 creates compile-ready stubs in other streams' directories so every import path exists from T+30. Ownership passes to the named stream the moment the commit lands. Owners replace the bodies and keep the exported names and types.
-   - `src/lib/crawl/index.ts` → WS2
-   - `src/lib/crawl/mcp-tools.ts` → WS2
-   - `src/lib/scan/index.ts` → WS2
-   - `src/lib/checkout/index.ts` → WS4
-   - `src/lib/checkout/mcp-tools.ts` → WS4
-   - `src/lib/mcp/result.ts`, `src/lib/mcp/types.ts` → WS3
+   - `src/features/crawl/index.ts` → WS2
+   - `src/features/crawl/mcp-tools.ts` → WS2
+   - `src/features/scan/index.ts` → WS2
+   - `src/features/checkout/index.ts` → WS4
+   - `src/features/checkout/mcp-tools.ts` → WS4
+   - `src/infrastructure/mcp/result.ts`, `src/infrastructure/mcp/types.ts` → WS3
 
    Stub code is in spec 01 §3.
 
 ### 3.4 Shared-file rules
 
-- **Contracts are frozen after T+30.** Change `src/lib/contracts/**` only additively (a new optional field, a new type), with a heads-up in the team channel **before** pushing. Renaming or removing anything needs agreement from every stream that imports it.
+- **Contracts are frozen after T+30.** Change `src/contracts/**` only additively (a new optional field, a new type), with a heads-up in the team channel **before** pushing. Renaming or removing anything needs agreement from every stream that imports it.
 - **Migrations are add-only (B15).** Never edit a migration that has been pushed, including `20260926010000_core.sql` once it's pushed. Streams may add their own migrations with later timestamps, `supabase/migrations/2026092602xxxx_<stream>_<what>.sql` (e.g. WS4's `20260926024000_ws4_checkout.sql`), and never edit the core one. `agent_requests.agent_profile` is now in core, so WS3 does not need its `20260926025000_ws3_agent_requests.sql` (if kept, it must use `add column if not exists`). Every new table must:
   - enable RLS;
   - `grant all ... to service_role`;
@@ -157,7 +160,7 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
   Announce before `supabase db push`. Never change the schema in Studio.
 - **Only WS1 runs `npm install`**, and it installs the union of all packages in one commit (spec 01 §2). Anyone who needs a new package asks WS1. WS1 installs it and pushes `package.json` + `package-lock.json` together.
 - **The MCP route imports registrars from each stream** (3.3.2). WS2 and WS4 never edit `src/app/api/mcp/route.ts`. WS3 never implements checkout or crawl logic.
-- **`src/proxy.ts`** stays Supabase-session-only (x402 lives in a route handler). Only WS1 changes the matcher.
+- **`src/proxy.ts`** stays Supabase-session-only. Only WS1 changes the matcher.
 - **Commit hygiene:** commit only your own directories. If you must touch a shared file, say so in the commit message.
 
 ---
@@ -166,15 +169,13 @@ Read `AGENTS.md` first. Next.js 16.3.6 differs from older versions. Check `node_
 
 ### 4.1 Money
 - **Integer minor units everywhere**: `Money = { amount: number /* int */, currency: "USD" }`. This covers the DB (`*_minor bigint`), contracts, MCP and REST.
-- Convert only at the edges, with `src/lib/money.ts`:
+- Convert only at the edges, with `src/shared/money.ts`:
   - `parsePrice` / `toMinor` / `rescaleMinor` when ingesting;
   - `fromMinor` for Shopify `"25.00"` strings;
   - `acpPrice` for `"25.00 USD"`;
-  - `toX402Price` for `"$42.17"`;
   - `formatMoney` for UI display.
 - Never use floats for arithmetic. Use `addMoney` / `multiplyMoney` / `sumMoney`, which throw on currency mismatch.
 - Search price filters compare raw minor units in each product's own currency. When an agent passes `filters.price`, WS3 also passes `context.currency` (if given) as the `currency` filter.
-- x402 accepts **USD only** (USDC). Checkouts in other currencies do not offer the x402 handler.
 
 ### 4.2 IDs
 | What | Format | Where |
@@ -195,12 +196,12 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 
 ### 4.3 Timestamps
 - The DB uses `timestamptz` everywhere, defaulting to `now()`. `updated_at` is maintained by triggers (`public.set_updated_at()`).
-- APIs emit ISO 8601 UTC with milliseconds (`new Date(x).toISOString()`, e.g. `2026-09-26T10:00:00.000Z`). Mappers in `src/lib/db/mappers.ts` normalize Postgres strings.
+- APIs emit ISO 8601 UTC with milliseconds (`new Date(x).toISOString()`, e.g. `2026-09-26T10:00:00.000Z`). Mappers in `src/infrastructure/database/mappers.ts` normalize Postgres strings.
 - The Shopify-compat output uses the same ISO strings in `created_at` / `updated_at` / `published_at`.
 
 ### 4.4 REST conventions
 - **Success bodies** are the contract type directly: `CheckoutSession`, `CrawlRun`, `{ products, pagination }`… No `{ data: … }` wrapper.
-- **Error envelope** (`ApiErrorBody`, `src/lib/contracts/api.ts`) on every non-2xx JSON response:
+- **Error envelope** (`ApiErrorBody`, `src/contracts/api.ts`) on every non-2xx JSON response:
   ```json
   { "error": { "code": "not_found", "message": "Product not found", "details": { "id": "…" }, "request_id": "5b0c…" } }
   ```
@@ -210,7 +211,6 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
   | `bad_request` | 400 | malformed JSON or query |
   | `validation_error` | 400 | zod failure; `details = z.flattenError(err)` |
   | `unauthorized` | 401 | reserved |
-  | `payment_required` | 402 | emitted only by `withX402` (x402 body, not our envelope) |
   | `forbidden` | 403 | opted-out store; demo wallet disabled |
   | `not_found` | 404 | unknown id / slug |
   | `conflict` | 409 | unique violation race |
@@ -228,7 +228,7 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
   **B11:** this table is the only code list. Stream-specific reasons go in `details.reason`, never in `code`. WS5 CCR-3's and WS2's store-submit codes map as follows: `invalid_url` / `invalid_body` / `url_not_allowed` → `validation_error`; `opted_out` → `forbidden`; `blocked` → `upstream_blocked`; `too_many_crawls` → `rate_limited`; `internal` → `internal`. For example: `{ "error": { "code": "forbidden", "message": "Store opted out", "details": { "reason": "opted_out" } } }`. The UI switches on `code` and may refine it with `details.reason`.
 - **Checkout business outcomes are not errors.** Out of stock, price changed, declined card and handoff return **HTTP 200** with a `CheckoutSession` whose `messages[]` explains (UCP convention). Protocol errors (validation, not found, invalid state) use the envelope.
 - **Headers:**
-  - every `/api/**`, `/s/**` and discovery response sends the CORS headers from `src/lib/http.ts`;
+  - every `/api/**`, `/s/**` and discovery response sends the CORS headers from `src/shared/http.ts`;
   - every response sends `Request-Id` (echoed from the request's `Request-Id` / `X-Request-Id`, else a fresh uuid);
   - every public route file exports `OPTIONS = preflight`.
 - **Catalog product shape (B7).** MCP and REST catalog outputs (`search_catalog`, `lookup_catalog`, `get_product`, `GET /api/v1/search`, `GET /api/v1/products/{id}`) use the **UCP product shape** (`toUcpProduct`, WS3, spec 03 §6.4). Raw `IndexedProduct` is available at `GET /api/v1/products/{id}?format=indexed`. `structuredContent` equals the REST body.
@@ -236,12 +236,12 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 - **Pagination:**
   - search uses an opaque `cursor` = base64url of `{"o":<offset>}` and returns `pagination: { cursor, has_next_page, total_count }`;
   - `products.json` uses Shopify's `?limit=&page=` (limit ≤ 250, default 30).
-- **Handlers are wrapped** with `route(name, handler)` from `src/lib/http.ts`, which handles the request id, the error envelope and a timing log line.
+- **Handlers are wrapped** with `route(name, handler)` from `src/shared/http.ts`, which handles the request id, the error envelope and a timing log line.
 
 ### 4.5 MCP conventions
 - Tool names and input shapes are in §6.8. Validate with the exported zod schemas: pass them as `inputSchema`. mcp-handler 2 accepts a `z.object`. UNVERIFIED on 16.3; fallback: pass `schema.shape`.
 - **structuredContent == the REST twin's JSON body.**
-  - Return `toolResult(structured, summary)` from `src/lib/mcp/result.ts`. Its text block is a one-line summary **plus the compact JSON**, because some clients only pass `content` to the model.
+  - Return `toolResult(structured, summary)` from `src/infrastructure/mcp/result.ts`. Its text block is a one-line summary **plus the compact JSON**, because some clients only pass `content` to the model.
   - Never throw out of a handler. Catch and return `toolError(err, toolName)`, which gives `isError: true` and `structuredContent: { error: { code, message, details? } }`.
 - Do not declare `outputSchema` in the MVP. How SDK v2 validates `outputSchema` against error results is UNVERIFIED.
 - Every tool accepts an optional `meta["ucp-agent"].profile`:
@@ -251,11 +251,11 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
 - Tool descriptions must say that prices are **integer minor units** ("$50 = 5000") and that the query takes keywords only.
 
 ### 4.6 Logging
-- Use `log.info|warn|error|debug(event, fields)` from `src/lib/log.ts`: one JSON line on stdout/stderr. `debug` prints only when `LOG_LEVEL=debug`.
+- Use `log.info|warn|error|debug(event, fields)` from `src/shared/log.ts`: one JSON line on stdout/stderr. `debug` prints only when `LOG_LEVEL=debug`.
 - Event names are `area.thing[.verb]`, for example:
   - `crawl.run.started`, `crawl.page.failed`;
   - `checkout.transition`;
-  - `payment.spt.authorized`, `payment.x402.settled`;
+  - `payment.spt.authorized`;
   - `mcp.tool.called`, `http.request`.
 - Always include ids (`store_id`, `crawl_run_id`, `checkout_id`, `request_id`).
 - **Never log:**
@@ -263,10 +263,10 @@ We do **not** use `gid://`-style or `sz:product:` prefixes. Plain uuids are the 
   - buyer email, phone or address.
 
   The logger redacts keys that match `/token|secret|password|authorization|cookie|private_?key|signature|email|phone|address|line1|postal|cart_token/i`, but don't rely on it.
-- `checkout_events.message` / `.data` are **public** (timeline). They may carry PI ids, tx hashes, merchant order ids and amounts. They must never carry PII.
+- `checkout_events.message` / `.data` are **public** (timeline). They may carry PI ids, merchant order ids and amounts. They must never carry PII.
 
 ### 4.7 Environment variables
-Read env lazily through `src/lib/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()`, `flags`), never at module top level, so `next build` works without secrets. A missing optional feature variable becomes `AppError("not_implemented")`. It never crashes the app.
+Read env lazily through `src/shared/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()`, `flags`), never at module top level, so `next build` works without secrets. A missing optional feature variable becomes `AppError("not_implemented")`. It never crashes the app.
 
 | Variable | Exposure | Needed by | Example / default |
 |---|---|---|---|
@@ -274,7 +274,7 @@ Read env lazily through `src/lib/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | public | WS5 (browser Realtime / reads), proxy | `sb_publishable_…` |
 | `SUPABASE_SECRET_KEY` | server | WS1 `db()` (so WS2, WS3, WS4, WS5 server code) | `sb_secret_…` |
 | `SUPABASE_DB_PASSWORD` | CLI only | WS1 (`supabase link` / `db push`) | not read by the app |
-| `APP_URL` | server | WS1 (`Store.urls`), WS2 (UA), WS3 (discovery URLs), WS4 (`pay_url`, links) | `http://localhost:3000`; prod `https://<app>.vercel.app` |
+| `APP_URL` | server | WS1 (`Store.urls`), WS2 (UA), WS3 (discovery URLs), WS4 (checkout and timeline links) | `http://localhost:3000`; prod `https://<app>.vercel.app` |
 | `CRAWLER_USER_AGENT` | server | WS2 | `ShoperZeroBot/0.1 (+https://<app>/bot)` |
 | `CRAWL_MAX_PRODUCTS` | server | WS2 | `150` |
 | `CRAWL_TIME_BUDGET_MS` | server | WS2 | `240000` |
@@ -293,13 +293,7 @@ Read env lazily through `src/lib/env.ts` (`optionalEnv`, `requireEnv`, `appUrl()
 | `STRIPE_SECRET_KEY` | server | WS4 | `sk_test_…` (WS4 refuses non-`sk_test_` keys) |
 | `STRIPE_PREVIEW_VERSION` | server | WS4 | `2026-04-22.preview` |
 | `STRIPE_SPT_MODE` | server | WS4 | `spt` (`fallback` = `pm_card_visa`) |
-| `X402_NETWORK` | server | WS4 | `eip155:84532` |
-| `X402_FACILITATOR_URL` | server | WS4 | `https://x402.org/facilitator` |
-| `X402_PAY_TO` | server | WS4 | `0x…` (our receiving address) |
-| `X402_FLOW` | server | WS4 | `upfront` (`authorization` fallback) |
-| `DEMO_WALLET_PRIVATE_KEY` | server | WS4 | `0x…` Base Sepolia **test** key only |
 | `DEMO_WALLET_ENABLED` | server | WS4 | `true` in the demo deployment only |
-| `DEMO_WALLET_MAX_USD` | server | WS4 | `$25` |
 | `DEMO_WALLET_TOKEN` | server | WS4 | shared secret for the demo wallet MCP, optional |
 | `CHECKOUT_ALLOWED_DOMAINS` | server | WS4 | comma-separated allowlist for `woo_store_api` (empty = only `WOO_DEMO_URL`'s host) |
 | `CHECKOUT_BROWSER_ENABLED` | server | WS4, stretch (browser connector) | `false` |
@@ -338,10 +332,10 @@ Local values go in `.env.local` (git-ignored). Deploy values go in Vercel projec
 
 ### 4.10 Server-only boundaries
 - These start with `import "server-only"` and must never be imported from a `"use client"` module:
-  - `src/lib/db/**` (except `mappers.ts`)
-  - `src/lib/supabase/admin.ts`, `src/lib/http.ts`, `src/lib/env.ts`
-  - `src/lib/crawl/**`, `src/lib/checkout/**`, `src/lib/payments/**`, `src/lib/mcp/**`
-- These are isomorphic (safe in client components): `src/lib/contracts/**`, `src/lib/money.ts`, `src/lib/slug.ts`, `src/lib/errors.ts`, `src/lib/log.ts`, `src/lib/db/mappers.ts`.
+  - `src/infrastructure/database/**` (except `mappers.ts`)
+  - `src/infrastructure/supabase/admin.ts`, `src/shared/http.ts`, `src/shared/env.ts`
+  - `src/features/crawl/**`, `src/features/checkout/**`, `src/features/checkout/payments/**`, `src/infrastructure/mcp/**`
+- These are isomorphic (safe in client components): `src/contracts/**`, `src/shared/money.ts`, `src/shared/slug.ts`, `src/shared/errors.ts`, `src/shared/log.ts`, `src/infrastructure/database/mappers.ts`.
 - Secrets exist only in server env vars without the `NEXT_PUBLIC_` prefix.
 - Scripts outside Next that import server-only modules must run with the `react-server` condition:
   ```bash
@@ -353,12 +347,12 @@ Local values go in `.env.local` (git-ignored). Deploy values go in Vercel projec
 
 | Use case | Client | Why |
 |---|---|---|
-| Any route handler, MCP tool, crawler, checkout code, server component reading index data | `db()` from `@/lib/db` (typed service-role client, memoized) through the db helper functions | Bypasses RLS and needs no cookies. Agent routes must not touch cookies. |
-| Browser: Realtime subscriptions (`scans`, `crawl_runs`, `stores`, `checkout_events`) and public reads/RPCs (`search_products`, `get_public_metrics`) | `createClient()` from `@/lib/supabase/client` (publishable key) | Public RLS policies allow it |
-| Server Components that need the user session | `createClient()` from `@/lib/supabase/server` | Not needed in the MVP (no auth). Calling `cookies()` makes the route dynamic. |
-| Session refresh | `@/lib/supabase/proxy` from `src/proxy.ts` only | Existing scaffold |
+| Any route handler, MCP tool, crawler, checkout code, server component reading index data | `db()` from `@/infrastructure/database` (typed service-role client, memoized) through the db helper functions | Bypasses RLS and needs no cookies. Agent routes must not touch cookies. |
+| Browser: Realtime subscriptions (`scans`, `crawl_runs`, `stores`, `checkout_events`) and public reads/RPCs (`search_products`, `get_public_metrics`) | `createClient()` from `@/infrastructure/supabase/client` (publishable key) | Public RLS policies allow it |
+| Server Components that need the user session | `createClient()` from `@/infrastructure/supabase/server` | Not needed in the MVP (no auth). Calling `cookies()` makes the route dynamic. |
+| Session refresh | `@/infrastructure/supabase/proxy` from `src/proxy.ts` only | Existing scaffold |
 
-Direct `.from(...)` queries outside `src/lib/db/**` are allowed only in WS5 client components (public reads) and in migrations/scripts. Everything else goes through a db helper. If a helper is missing, ask WS1 or add it with a heads-up.
+Direct `.from(...)` queries outside `src/infrastructure/database/**` are allowed only in WS5 client components (public reads) and in migrations/scripts. Everything else goes through a db helper. If a helper is missing, ask WS1 or add it with a heads-up.
 
 Realtime example (WS5):
 ```ts
@@ -371,7 +365,7 @@ supabase.channel(`crawl:${id}`)
 - **Route handler params are async.** Use `RouteContext<'/api/v1/products/[id]'>` (a global type generated by `next dev` / `next build` / `next typegen`) and `const { id } = await ctx.params`.
 - `GET` route handlers are **not cached** by default. Leave them dynamic.
 - Route segment config:
-  - `export const maxDuration = 300` on the crawl-start route (`POST /api/v1/stores`), the scan-start route (`POST /api/v1/scans`), the MCP route (B8: `index_store` and `scan_store` schedule work with `after()`) and the x402 pay route `POST /api/v1/checkouts/{id}/pay/x402` (B6) (`after()` runs within the route's `maxDuration`);
+  - `export const maxDuration = 300` on the crawl-start route (`POST /api/v1/stores`), the scan-start route (`POST /api/v1/scans`), the MCP route (B8: `index_store` and `scan_store` schedule work with `after()`) (`after()` runs within the route's `maxDuration`);
   - `export const runtime = "nodejs"` is the default. **Never use `edge`**, which is deprecated.
 - `after()` from `next/server` works in route handlers, including inside functions they call, such as `startStoreCrawl()`. It runs even when the response errored.
 - `proxy.ts` replaces `middleware.ts`. Its matcher must be a static constant.
@@ -382,11 +376,11 @@ supabase.channel(`crawl:${id}`)
 
 ---
 
-## 5. Contract files (`src/lib/contracts/`)
+## 5. Contract files (`src/contracts/`)
 
 | File | Contents |
 |---|---|
-| `primitives.ts` | `Money`, `MoneySchema`, `CurrencySchema`, `IsoDateTime`, enum value arrays + union types (`Availability`, `Platform`, `ExtractionSource`, `CheckoutConnectorId`, `PaymentRailId`, `AgentSurface`), protocol constants (`UCP_VERSION`, `UCP_SUPPORTED_VERSIONS`, `ACP_VERSION`, `PAYMENT_HANDLER_IDS`, `X402_NETWORKS`), limits |
+| `primitives.ts` | `Money`, `MoneySchema`, `CurrencySchema`, `IsoDateTime`, enum value arrays + union types (`Availability`, `Platform`, `ExtractionSource`, `CheckoutConnectorId`, `PaymentRailId`, `AgentSurface`), protocol constants (`UCP_VERSION`, `UCP_SUPPORTED_VERSIONS`, `ACP_VERSION`, `PAYMENT_HANDLER_IDS`), limits |
 | `api.ts` | `API_ERROR_STATUS`, `ApiErrorCode`, `ApiErrorBody` |
 | `catalog.ts` | `OfferSchema`/`Offer`, `NormalizedVariantSchema`/`NormalizedVariant`, `NormalizedProductSchema`/`NormalizedProduct`, `StoreRef`, `IndexedVariant`, `IndexedProduct`, `ProductSummary`, `SearchParams`, `SearchResult` |
 | `store.ts` | `StoreStatus`, readiness (`ReadinessCheckId`, `READINESS_WEIGHTS`, `gradeFor`, `ReadinessCheck`, `ReadinessReport`), `StoreStrategy`, `StoreUrls`, `Store`, `StoreSummary`, `CrawlRun`, `CrawlStep`, `CrawlLogEntry`, `StoreClaim`, `ClaimMethod`, `PublicMetrics` |
@@ -395,10 +389,10 @@ supabase.channel(`crawl:${id}`)
 | `checkout.ts` | statuses/states + `STATE_TO_STATUS` + `ALLOWED_TRANSITIONS`, input schemas + inferred types (`Address`, `Buyer`, `LineItemInput`, `CreateCheckoutInput`, `UpdateCheckoutInput`, `PaymentCredential`, `PaymentInstrument`, `CompleteCheckoutInput`), outputs (`LineItem`, `ShippingOption`, `Total`, `PaymentHandler`, `Message`, `CheckoutLink`, `Order`, `CheckoutSession`, `CheckoutEvent`, `CheckoutEventData`), persistence (`CheckoutPaymentRecord`, `CheckoutRecord`), plug-ins (`ResolvedLine`, `QuoteInput`, `Quote`, `CheckoutConnector`, `PaymentReceipt`, `PaymentRail`) |
 | `mcp.ts` | `UcpMetaSchema`, every tool input schema, output types (incl. the open `UcpProduct`), `MCP_TOOL_INPUTS`, `DEMO_WALLET_TOOL_INPUTS`, `ToolResult` |
 | `services.ts` | `RequestContext`, WS2 function types (`StartStoreCrawlFn`, `CrawlStoreFn`, `VerifyOfferFn`, `ComputeReadinessFn`, `StartScanFn`, `RunScanFn`), WS4 `CheckoutService` |
-| `index.ts` | barrel. Always `import { … } from "@/lib/contracts"` |
+| `index.ts` | barrel. Always `import { … } from "@/contracts"` |
 
 ```ts
-// src/lib/contracts/index.ts
+// src/contracts/index.ts
 export * from "./primitives";
 export * from "./api";
 export * from "./catalog";
@@ -416,7 +410,7 @@ Contracts are isomorphic: zod is their only dependency.
 
 ## 6. Canonical contracts (copy verbatim)
 
-### 6.1 `src/lib/contracts/primitives.ts`
+### 6.1 `src/contracts/primitives.ts`
 ```ts
 import { z } from "zod";
 
@@ -448,7 +442,7 @@ export type ExtractionSource = (typeof EXTRACTION_SOURCES)[number];
 export const CHECKOUT_CONNECTOR_IDS = ["woo_store_api", "magento_guest", "handoff", "browser"] as const;
 export type CheckoutConnectorId = (typeof CHECKOUT_CONNECTOR_IDS)[number];
 
-export const PAYMENT_RAIL_IDS = ["stripe_spt", "x402"] as const;
+export const PAYMENT_RAIL_IDS = ["stripe_spt"] as const;
 export type PaymentRailId = (typeof PAYMENT_RAIL_IDS)[number];
 
 export const AGENT_SURFACES = ["mcp", "rest", "products_json", "feed", "llms_txt", "ucp", "openapi", "agent_card"] as const;
@@ -460,11 +454,8 @@ export const UCP_SUPPORTED_VERSIONS = ["2026-08-25", "2026-04-08"] as const;
 export const ACP_VERSION = "2026-04-17" as const;
 export const PAYMENT_HANDLER_IDS = {
   stripe_spt: "app.shoperzero.stripe_spt",
-  x402: "app.shoperzero.x402",
 } as const;
 export type PaymentHandlerId = (typeof PAYMENT_HANDLER_IDS)[PaymentRailId];
-export const X402_NETWORKS = { base_sepolia: "eip155:84532", base: "eip155:8453" } as const;
-export type X402Network = (typeof X402_NETWORKS)[keyof typeof X402_NETWORKS];
 
 // ---------- limits ----------
 export const QUOTE_TTL_SECONDS = 600;          // checkout quote validity (10 min)
@@ -477,14 +468,13 @@ export const PRODUCTS_JSON_DEFAULT_LIMIT = 30;  // Shopify default
 export const PRODUCTS_JSON_MAX_LIMIT = 250;
 ```
 
-### 6.2 `src/lib/contracts/api.ts`
+### 6.2 `src/contracts/api.ts`
 ```ts
 // REST error envelope + codes. Every non-2xx JSON response from /api/** uses ApiErrorBody.
 export const API_ERROR_STATUS = {
   bad_request: 400,          // malformed JSON, bad query string
   validation_error: 400,     // zod failure; details = z.flattenError(err)
   unauthorized: 401,
-  payment_required: 402,     // only emitted by withX402 itself (x402 body), never by our code
   forbidden: 403,            // opted-out store, demo wallet disabled
   not_found: 404,
   conflict: 409,             // unique violation (e.g. duplicate store slug race)
@@ -512,7 +502,7 @@ export interface ApiErrorBody {
 }
 ```
 
-### 6.3 `src/lib/contracts/catalog.ts`
+### 6.3 `src/contracts/catalog.ts`
 ```ts
 import { z } from "zod";
 import {
@@ -628,7 +618,7 @@ export interface SearchResult {
 }
 ```
 
-### 6.4 `src/lib/contracts/store.ts`
+### 6.4 `src/contracts/store.ts`
 ```ts
 import type {
   CheckoutConnectorId, ExtractionSource, IsoDateTime, Platform,
@@ -770,12 +760,12 @@ export interface PublicMetrics {
   gmv_minor: Record<string, number>; // currency -> minor units
   // round 2, optional (WS5): the UI must tolerate their absence
   stores_by_best_method?: Partial<Record<AccessMethod | "none", number>>; // non-opted-out stores with a best_method
-  orders_by_rail?: Partial<Record<"stripe_spt" | "x402", number>>;        // placed + confirmed orders
+  orders_by_rail?: Partial<Record<"stripe_spt", number>>;        // placed + confirmed orders
   median_seconds_to_agent_ready?: number | null; // median (finished_at - created_at) of succeeded crawl runs
 }
 ```
 
-### 6.5 `src/lib/contracts/crawl.ts`
+### 6.5 `src/contracts/crawl.ts`
 ```ts
 import type { NormalizedProduct, Offer } from "./catalog";
 import type { CrawlLogEntry } from "./store";
@@ -807,7 +797,7 @@ export interface PlatformAdapter {
 }
 ```
 
-### 6.5a `src/lib/contracts/scan.ts` (round 2, DECISIONS §A)
+### 6.5a `src/contracts/scan.ts` (round 2, DECISIONS §A)
 The type block is DECISIONS §A **verbatim**. Fields may be added later (additively); none may be renamed. Everything below the marked line is an addition. DB CHECK constraints on `scans` and `stores.best_method` mirror the value arrays.
 ```ts
 import { z } from "zod";
@@ -888,13 +878,13 @@ export interface ScanStartResult {       // WS2 02 §15.1(c)
 ```
 Rules (DECISIONS §A, restated for implementers): a probe **passes** when an agent could at least list products with price and availability through it, and is **partial** when only some capabilities work. The score reflects the best method achieved plus its capabilities: `api` gets the highest band, `dom` the middle, `computer_use` the lowest, `none` about 0. WS2 owns the weights (spec 02). `grade` uses `gradeFor(score)` from `store.ts`. The computer-use probe always stops before payment and never types real buyer data. Screenshots and step text are public (bucket and table are public-read).
 
-### 6.6 `src/lib/contracts/checkout.ts`
+### 6.6 `src/contracts/checkout.ts`
 ```ts
 import { z } from "zod";
 import type { IndexedVariant } from "./catalog";
 import {
   PAYMENT_HANDLER_IDS, UCP_VERSION,
-  type CheckoutConnectorId, type IsoDateTime, type Money, type PaymentRailId, type X402Network,
+  type CheckoutConnectorId, type IsoDateTime, type Money, type PaymentRailId,
 } from "./primitives";
 import type { Store } from "./store";
 
@@ -984,13 +974,12 @@ export type UpdateCheckoutInput = z.infer<typeof UpdateCheckoutInputSchema>;
 
 export const PaymentCredentialSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("spt"), token: z.string().min(1).max(255) }),            // "spt_..." (fallback: "pm_card_visa")
-  z.object({ type: z.literal("x402_receipt"), tx_hash: z.string().regex(/^0x[0-9a-fA-F]{64}$/) }),
 ]);
 export type PaymentCredential = z.infer<typeof PaymentCredentialSchema>;
 
 export const PaymentInstrumentSchema = z.object({
-  handler_id: z.enum([PAYMENT_HANDLER_IDS.stripe_spt, PAYMENT_HANDLER_IDS.x402]),
-  type: z.enum(["card", "x402"]),
+  handler_id: z.literal(PAYMENT_HANDLER_IDS.stripe_spt),
+  type: z.literal("card"),
   credential: PaymentCredentialSchema,
 });
 export type PaymentInstrument = z.infer<typeof PaymentInstrumentSchema>;
@@ -1025,18 +1014,11 @@ export const TOTAL_TYPES = ["subtotal", "shipping", "tax", "discount", "total"] 
 export type TotalType = (typeof TOTAL_TYPES)[number];
 export interface Total { type: TotalType; amount: number; display_text?: string } // minor units in CheckoutSession.currency
 
-export type PaymentHandler =
-  | {
-      id: typeof PAYMENT_HANDLER_IDS.stripe_spt;
-      rail: "stripe_spt";
-      config: { accepted: "card"[]; test_mode: boolean; profile?: string };
-    }
-  | {
-      id: typeof PAYMENT_HANDLER_IDS.x402;
-      rail: "x402";
-      // pay_url = {APP_URL}/api/v1/checkouts/{id}/pay/x402 (B6)
-      config: { pay_url: string; network: X402Network; asset: "USDC"; amount: string /* "$42.17" */ };
-    };
+export type PaymentHandler = {
+  id: typeof PAYMENT_HANDLER_IDS.stripe_spt;
+  rail: "stripe_spt";
+  config: { accepted: "card"[]; test_mode: boolean; profile?: string };
+};
 
 export const MESSAGE_CODES = [
   "out_of_stock", "price_changed", "quote_expired", "missing_buyer", "missing_address",
@@ -1102,8 +1084,6 @@ export interface CheckoutEvent {
 export type CheckoutEventData = {
   rail?: PaymentRailId;
   payment_intent_id?: string;
-  tx_hash?: string;
-  network?: X402Network;
   merchant_order_id?: string;
   merchant_order_url?: string;
   continue_url?: string;
@@ -1114,20 +1094,18 @@ export type CheckoutEventData = {
 
 // ---------- persistence (internal; never serialize to agents) ----------
 export type CheckoutPaymentStatus =
-  | "none" | "authorized" | "settled" | "captured" | "voided" | "refunded" | "failed";
+  | "none" | "authorized" | "captured" | "voided" | "refunded" | "failed";
 export interface CheckoutPaymentRecord {   // checkouts.payment jsonb
   rail?: PaymentRailId;
   status?: CheckoutPaymentStatus;
-  reference?: string;         // pi_... | 0x tx hash
+  reference?: string;         // Stripe PaymentIntent id (pi_...)
   amount?: Money;
   payer?: string;
   captured?: boolean;
   // WS4 internal fields in the same jsonb (CCR-W4-R2-3)
   lock?: { rail: PaymentRailId; until: IsoDateTime }; // payment lock; updates are rejected (409) while held
   mode?: "spt" | "fallback";                           // STRIPE_SPT_MODE at payment time
-  network?: string;                                    // x402 CAIP-2 network
   idempotency_key?: string;
-  simulated_refund?: boolean;                          // x402 mock refund
 }
 export interface CheckoutRecord {          // typed checkouts row (db/checkouts.ts)
   id: string;
@@ -1186,26 +1164,25 @@ export interface CheckoutConnector {
 }
 // B5: every connector implements quote(store, QuoteInput, prev) and continueUrl(store, ResolvedLine[]) as above.
 // A store without a headless connector ends in CheckoutState "handoff" (→ status "requires_escalation").
-// Connector choice: resolveCheckoutConnector(store) from @/lib/checkout/connectors (WS4, B10).
+// Connector choice: resolveCheckoutConnector(store) from @/features/checkout/connectors (WS4, B10).
 
 export interface PaymentReceipt {
   rail: PaymentRailId;
-  reference: string;          // pi_... | 0x tx hash
+  reference: string;          // Stripe PaymentIntent id (pi_...)
   amount: Money;
-  payer?: string;             // wallet address (x402)
-  captured: boolean;          // x402: true (settled upfront); SPT: false until capture()
+  captured: boolean;          // false until capture() succeeds
 }
 export interface PaymentRail {
   id: PaymentRailId;
-  /** SPT: PaymentIntent with capture_method=manual. x402: verify the already-settled payment for this checkout. */
+  /** Stripe PaymentIntent with capture_method=manual. */
   authorize(checkout: CheckoutSession, instrument: PaymentInstrument): Promise<PaymentReceipt>;
   capture(receipt: PaymentReceipt): Promise<PaymentReceipt>;
-  /** SPT: cancel the PI (void). x402: log + checkout_event only (mock refund). */
+  /** Cancel the uncaptured PaymentIntent, or refund a captured payment. */
   voidOrRefund(receipt: PaymentReceipt): Promise<void>;
 }
 ```
 
-### 6.7 `src/lib/contracts/services.ts`
+### 6.7 `src/contracts/services.ts`
 ```ts
 // Cross-stream function signatures. Implementations MUST be typed with these, e.g.
 //   export const verifyOffer: VerifyOfferFn = async (variantId) => { ... };
@@ -1225,7 +1202,7 @@ export interface RequestContext {
   user_agent?: string;
 }
 
-// ---------- WS2: import from "@/lib/crawl" (src/lib/crawl/index.ts) ----------
+// ---------- WS2: import from "@/features/crawl" (src/features/crawl/index.ts) ----------
 /**
  * Normalize rawUrl (or use opts.storeId for POST /api/v1/stores {store_id}), upsert the stores row, reuse the
  * latest ScanReport to pick the method (api → platform adapter, dom → sitemap + JSON-LD / DOM recipe), insert a
@@ -1247,7 +1224,7 @@ export type VerifyOfferFn = (variantId: string) => Promise<Offer>;
 /** "before": derived from the store's latest ScanReport (B2; probes the site only if there is none). "after": score with our hosted surfaces. */
 export type ComputeReadinessFn = (store: Store, phase: "before" | "after") => Promise<ReadinessReport>;
 
-// ---------- WS2 scan: import from "@/lib/scan" (src/lib/scan/index.ts) ----------
+// ---------- WS2 scan: import from "@/features/scan" (src/features/scan/index.ts) ----------
 /** Normalize URL, upsertStoreForUrl, reuse an active scan (< 6 min) or insert a queued one (db.upsertScan), schedule runScan() with after(). Returns immediately. */
 export type StartScanFn = (
   rawUrl: string,
@@ -1256,8 +1233,8 @@ export type StartScanFn = (
 /** Runs the cascade (api → dom → computer_use) inside after(). Persists every probe transition via db.upsertScan (Realtime). Never throws: failures end in status "failed". */
 export type RunScanFn = (scanId: string) => Promise<ScanReport>;
 
-// ---------- WS4: import from "@/lib/checkout" (src/lib/checkout/index.ts) ----------
-// All throw AppError (src/lib/errors.ts): not_found, validation_error, invalid_state, gone,
+// ---------- WS4: import from "@/features/checkout" (src/features/checkout/index.ts) ----------
+// All throw AppError (src/shared/errors.ts): not_found, validation_error, invalid_state, gone,
 // idempotency_conflict, upstream_error. Business outcomes (out of stock, handoff, declined)
 // are NOT thrown: they come back as a CheckoutSession with messages[] (HTTP 200).
 export interface CheckoutService {
@@ -1271,7 +1248,7 @@ export interface CheckoutService {
 }
 ```
 
-### 6.8 `src/lib/contracts/mcp.ts` (MCP tool list)
+### 6.8 `src/contracts/mcp.ts` (MCP tool list)
 ```ts
 import { z } from "zod";
 import type { IndexedProduct } from "./catalog";
@@ -1279,13 +1256,13 @@ import {
   CompleteCheckoutInputSchema, CreateCheckoutInputSchema, UpdateCheckoutInputSchema,
   type CheckoutSession,
 } from "./checkout";
-import { PLATFORMS, type X402Network } from "./primitives";
+import { PLATFORMS } from "./primitives";
 import type { ScanReport, ScanStartResult } from "./scan";
 import type { CrawlRun, CrawlRunStatus, Store, StoreSummary } from "./store";
 
 // Rule: a tool's structuredContent === the JSON body of its REST twin.
 // B7: catalog outputs use the UCP product shape. Its exact fields are owned by WS3
-// (src/lib/formats/ucp.ts toUcpProduct, spec 03 §6.4); contracts keep it open.
+// (src/features/catalog/formats/ucp.ts toUcpProduct, spec 03 §6.4); contracts keep it open.
 export interface UcpProduct { id: string; title: string; [key: string]: unknown }
 // Every tool also returns content: [{ type: "text", text: <1-3 line summary> }].
 
@@ -1299,7 +1276,7 @@ export const UcpMetaSchema = z
 
 const Id = z.uuid();
 
-// ---------- catalog (WS3: src/lib/mcp/tools/catalog.ts) ----------
+// ---------- catalog (WS3: src/infrastructure/mcp/tools/catalog.ts) ----------
 export const ListStoresInputSchema = z.object({
   query: z.string().trim().max(200).optional().describe("Matches store name or domain"),
   platform: z.enum(PLATFORMS).optional(),
@@ -1370,7 +1347,7 @@ export interface GetProductIndexedOutput {
   verification?: GetProductOutput["verification"];
 }
 
-// ---------- indexing (WS2: src/lib/crawl/mcp-tools.ts) ----------
+// ---------- indexing (WS2: src/features/crawl/mcp-tools.ts) ----------
 export const IndexStoreInputSchema = z.object({
   url: z.string().trim().min(3).max(2048).describe("Store homepage URL or domain, e.g. 'www.bulk.com/uk'"),
   meta: UcpMetaSchema,
@@ -1388,7 +1365,7 @@ export type IndexStoreOutput = IndexStoreResult;
 export const GetCrawlStatusInputSchema = z.object({ crawl_run_id: Id, meta: UcpMetaSchema });
 export type GetCrawlStatusOutput = CrawlRun; // WS2 returns getCrawlRunView(id), a superset of CrawlRun
 
-// ---------- scan (WS2: src/lib/crawl/mcp-tools.ts, DECISIONS §A) ----------
+// ---------- scan (WS2: src/features/crawl/mcp-tools.ts, DECISIONS §A) ----------
 export const ScanStoreInputSchema = z.object({
   url: z.string().trim().min(3).max(2048).describe('Store homepage URL or domain, e.g. "https://www.bulk.com/uk" or "bulk.com".'),
   mode: z.enum(["cascade", "full"]).optional().describe('Default "cascade": stop at the first access method that works.'),
@@ -1399,7 +1376,7 @@ export type ScanStoreOutput = ScanStartResult; // {scan_id, store_id, status_url
 export const GetScanInputSchema = z.object({ scan_id: z.uuid().describe("From scan_store."), meta: UcpMetaSchema });
 export type GetScanOutput = ScanReport;           // = GET /api/v1/scans/{id}
 
-// ---------- checkout (WS4: src/lib/checkout/mcp-tools.ts) ----------
+// ---------- checkout (WS4: src/features/checkout/mcp-tools.ts) ----------
 export const CreateCheckoutToolInputSchema = z.object({
   checkout: CreateCheckoutInputSchema,
   idempotency_key: z.string().min(1).max(255).optional(),
@@ -1426,18 +1403,6 @@ export const WalletIssueSptInputSchema = z.object({
 });
 export interface WalletIssueSptOutput { token: string; expires_at: string | null; test_mode: true }
 
-export const WalletPayX402InputSchema = z.object({
-  pay_url: z.url().describe("PaymentHandler.config.pay_url from the checkout"),
-});
-export interface WalletPayX402Output {
-  tx_hash: string;
-  payer: string;
-  network: X402Network;
-  amount: string;             // "$42.17"
-  explorer_url: string;       // https://sepolia.basescan.org/tx/{tx_hash}
-  checkout?: CheckoutSession; // when the pay route returns it
-}
-
 // ---------- registry ----------
 export const MCP_TOOL_INPUTS = {
   list_stores: ListStoresInputSchema,
@@ -1459,7 +1424,6 @@ export type McpToolName = keyof typeof MCP_TOOL_INPUTS;
 
 export const DEMO_WALLET_TOOL_INPUTS = {
   wallet_issue_spt: WalletIssueSptInputSchema,
-  wallet_pay_x402: WalletPayX402InputSchema,
 } as const;
 
 /** Shape every tool handler returns (assignable to the SDK's CallToolResult). */
@@ -1490,9 +1454,8 @@ MCP tool table (`/api/mcp`, `maxDuration = 300`). The route composes three regis
 | `cancel_checkout` | `CancelCheckoutToolInputSchema` | `CheckoutSession` | `registerCheckoutTools` (WS4) | `POST /api/v1/checkouts/{id}/cancel` |
 | `get_order` | `GetOrderToolInputSchema` | `Order` | `registerCheckoutTools` (WS4) | `GET /api/v1/orders/{id}` |
 | `wallet_issue_spt` (demo wallet MCP) | `WalletIssueSptInputSchema` | `WalletIssueSptOutput` | demo wallet (WS4) | none |
-| `wallet_pay_x402` (demo wallet MCP) | `WalletPayX402InputSchema` | `WalletPayX402Output` | demo wallet (WS4) | none |
 
-REST bodies for checkout: the body of `POST /api/v1/checkouts` is `CreateCheckoutInput`, of `PUT` is `UpdateCheckoutInput`, and of `.../complete` is `CompleteCheckoutInput`. The idempotency key comes from the `Idempotency-Key` header. The x402 rail is paid at **`POST /api/v1/checkouts/{id}/pay/x402`** (B6, WS4, `withX402`, `maxDuration = 300`); agents get the full URL from `PaymentHandler.config.pay_url`. The body of `POST /api/v1/scans` is `CreateScanInput`; the body of `POST /api/v1/stores` is `{ url } | { store_id }` plus `force?`.
+REST bodies for checkout: the body of `POST /api/v1/checkouts` is `CreateCheckoutInput`, of `PUT` is `UpdateCheckoutInput`, and of `.../complete` is `CompleteCheckoutInput`. The idempotency key comes from the `Idempotency-Key` header. The body of `POST /api/v1/scans` is `CreateScanInput`; the body of `POST /api/v1/stores` is `{ url } | { store_id }` plus `force?`.
 
 `search_catalog` → `SearchParams` mapping (WS3):
 - `query` → `query`
@@ -1503,9 +1466,9 @@ REST bodies for checkout: the body of `POST /api/v1/checkouts` is `CreateCheckou
 - `context.currency` → `currency`, only when a price filter is present
 - `pagination.limit` → `limit`; decoded `cursor` → `offset`
 
-### 6.9 MCP glue (`src/lib/mcp/types.ts`, `src/lib/mcp/result.ts`)
+### 6.9 MCP glue (`src/infrastructure/mcp/types.ts`, `src/infrastructure/mcp/result.ts`)
 ```ts
-// src/lib/mcp/types.ts  (WS1 creates at T+30; WS3 owns)
+// src/infrastructure/mcp/types.ts  (WS1 creates at T+30; WS3 owns)
 import type { createMcpHandler } from "mcp-handler";
 /** The server object mcp-handler passes to its init callback (has registerTool). */
 export type McpServer = Parameters<Parameters<typeof createMcpHandler>[0]>[0];
@@ -1514,10 +1477,10 @@ export type ToolRegistrar = (server: McpServer) => void;
 //   import type { McpServer } from "@modelcontextprotocol/server";
 ```
 ```ts
-// src/lib/mcp/result.ts  (WS1 creates at T+30; WS3 owns)
-import type { ToolResult } from "@/lib/contracts";
-import { toAppError } from "@/lib/errors";
-import { log } from "@/lib/log";
+// src/infrastructure/mcp/result.ts  (WS1 creates at T+30; WS3 owns)
+import type { ToolResult } from "@/contracts";
+import { toAppError } from "@/shared/errors";
+import { log } from "@/shared/log";
 
 /**
  * Success result. The text block carries a one-line summary PLUS the compact JSON, because
@@ -1542,10 +1505,10 @@ export function toolError(err: unknown, tool?: string): ToolResult {
 ```ts
 // src/app/api/mcp/route.ts  (WS3): the composition rule
 import { createMcpHandler } from "mcp-handler";
-import { instrumentServer } from "@/lib/mcp/instrument";           // WS3: rate limit + agent_requests for EVERY tool
-import { registerCatalogTools } from "@/lib/mcp/tools/catalog";   // WS3
-import { registerCrawlTools } from "@/lib/crawl/mcp-tools";       // WS2: index_store, get_crawl_status, scan_store, get_scan
-import { registerCheckoutTools } from "@/lib/checkout/mcp-tools"; // WS4: 5 checkout tools + get_order
+import { instrumentServer } from "@/infrastructure/mcp/instrument";           // WS3: rate limit + agent_requests for EVERY tool
+import { registerCatalogTools } from "@/infrastructure/mcp/tools/catalog";   // WS3
+import { registerCrawlTools } from "@/features/crawl/mcp-tools";       // WS2: index_store, get_crawl_status, scan_store, get_scan
+import { registerCheckoutTools } from "@/features/checkout/mcp-tools"; // WS4: 5 checkout tools + get_order
 
 export const maxDuration = 300; // B8: index_store and scan_store schedule work with after()
 
@@ -1576,8 +1539,8 @@ export const registerCheckoutTools: ToolRegistrar = (server) => {
 };
 ```
 
-### 6.10 db helper signatures (`src/lib/db/**`, WS1; behavior in spec 01 §6)
-Import everything from `@/lib/db` (the barrel re-exports every file below). All helpers are server-only. Readers exclude opted-out stores unless noted. This is the complete B12 list; WS3 and WS5 do not write private copies.
+### 6.10 db helper signatures (`src/infrastructure/database/**`, WS1; behavior in spec 01 §6)
+Import everything from `@/infrastructure/database` (the barrel re-exports every file below). All helpers are server-only. Readers exclude opted-out stores unless noted. This is the complete B12 list; WS3 and WS5 do not write private copies.
 ```ts
 import type {
   AccessMethod, AgentSurface, CheckoutConnectorId, CheckoutEvent, CheckoutRecord, CheckoutState, ClaimMethod,
@@ -1585,7 +1548,7 @@ import type {
   ProductSummary, PublicMetrics, ReadinessReport, ResolvedLine, ScanReport, ScanStatus, SearchParams, SearchResult,
   Store, StoreClaim,
   StoreStatus, StoreStrategy, StoreSummary,
-} from "@/lib/contracts";
+} from "@/contracts";
 import type { StoreRow } from "./mappers";
 
 // ---------------- client.ts ----------------
@@ -1706,6 +1669,8 @@ export declare function updateCheckoutRecord(
 ): Promise<CheckoutRecord | null>;
 export declare function insertCheckoutEvent(ev: Omit<CheckoutEvent, "id" | "created_at">): Promise<CheckoutEvent>;
 export declare function listCheckoutEvents(checkoutId: string): Promise<CheckoutEvent[]>;
+/** checkout_id of the newest checkout_events row, or null. Service-role; WS5 /checkouts/live follow mode (C9). */
+export declare function getLatestCheckoutId(): Promise<string | null>;
 export declare function insertOrder(o: Omit<Order, "id" | "created_at">): Promise<Order>;
 export declare function getOrder(id: string): Promise<Order | null>;
 export declare function getOrderByCheckoutId(checkoutId: string): Promise<Order | null>;
@@ -1745,7 +1710,8 @@ export declare function upsertClaim(storeId: string, method: ClaimMethod): Promi
 export declare function getOrCreateClaim(storeId: string, method?: ClaimMethod): Promise<StoreClaim>;
 export declare function getClaim(storeId: string): Promise<StoreClaim | null>;
 /** Sets store_claims.verified_at and stores.claimed_at = now(). */
-export declare function markClaimVerified(storeId: string): Promise<void>;
+/** Pass the checked token: a claim rotated in between is not verified (throws `conflict`). */
+export declare function markClaimVerified(storeId: string, token?: string): Promise<void>;
 export declare function setStoreOptOut(storeId: string, optedOut: boolean): Promise<void>;
 
 // ---------------- metrics.ts ----------------
@@ -1765,11 +1731,11 @@ export declare function getIndexStats(storeId: string): Promise<IndexStats>;
 
 ### 6.11 Shared helpers (WS1; full code in spec 01 §10)
 ```ts
-// src/lib/errors.ts   (isomorphic)
+// src/shared/errors.ts   (isomorphic)
 export class AppError extends Error { code: ApiErrorCode; details?: unknown; get status(): number }
 export function isAppError(e: unknown): e is AppError;
 export function toAppError(e: unknown): AppError;           // ZodError→validation_error, 23505→conflict, PGRST116→not_found, 22P02→validation_error
-// src/lib/http.ts     (server-only)
+// src/shared/http.ts     (server-only)
 export const CORS_HEADERS: Record<string, string>;
 export function getRequestId(req: Request): string;
 export function json(data: unknown, init?: ResponseInit & { requestId?: string }): Response;
@@ -1779,14 +1745,14 @@ export function preflight(): Response;                      // export const OPTI
 export function parseJsonBody<S extends z.ZodType>(req: Request, schema: S): Promise<z.output<S>>;
 export function parseSearchParams<S extends z.ZodType>(req: Request, schema: S): z.output<S>;
 export function route<Ctx>(name: string, handler: (req: NextRequest, ctx: Ctx, meta: { requestId: string }) => Promise<Response>): (req: NextRequest, ctx: Ctx) => Promise<Response>;
-// src/lib/log.ts      (isomorphic)
+// src/shared/log.ts      (isomorphic)
 export const log: { debug; info; warn; error(event: string, err?: unknown, fields?: Record<string, unknown>): void };
-// src/lib/env.ts      (server-only)
+// src/shared/env.ts      (server-only)
 export function optionalEnv(name: EnvName): string | undefined;
 export function requireEnv(name: EnvName): string;          // throws AppError("not_implemented")
 export function appUrl(): string;                            // APP_URL > https://$VERCEL_PROJECT_PRODUCTION_URL > http://localhost:3000
 export const flags: { demoWalletEnabled(): boolean; allowPrivateStoreHosts(): boolean; crawlMaxProducts(): number; crawlerUserAgent(): string; scanCuEnabled(): boolean; scanCuMaxSteps(): number };
-// src/lib/money.ts, src/lib/slug.ts: see spec 01 §7 (full code of everything above: spec 01 §10)
+// src/shared/money.ts, src/shared/slug.ts: see spec 01 §7 (full code of everything above: spec 01 §10)
 ```
 
 ---
@@ -1798,8 +1764,8 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
 | When | Milestone | Owner(s) | Exit check |
 |---|---|---|---|
 | T+15 | Packages installed and pushed (one commit) | WS1 | `npm ci && npm run build` green on a fresh clone |
-| T+15 | Payment spikes: SPT test helper returns a token; `curl https://x402.org/facilitator/supported` lists `eip155:84532`; demo wallet funded (faucet.circle.com) | WS4 | go / fallback decision recorded in the channel |
-| **T+30 SYNC** | **Contracts + stubs + core migration file + seed pushed. CONTRACTS FROZEN.** | WS1 | `npm run build` green; every stream imports `@/lib/contracts` |
+| T+15 | Stripe feasibility check: SPT test helper returns a token, or labelled test fallback is selected | WS4 | go / fallback decision recorded in the channel |
+| **T+30 SYNC** | **Contracts + stubs + core migration file + seed pushed. CONTRACTS FROZEN.** | WS1 | `npm run build` green; every stream imports `@/contracts` |
 | T+45 | Migration applied (local and remote), `types.gen.ts` generated, read helpers (`getProduct`, `searchProducts`, `getStoreBySlug`, `listStores`) implemented against seed | WS1 | `npm run db:smoke` passes (spec 01 §11) |
 | T+60 | MCP route alive: `tools/list` shows the catalog tools; `search_catalog("hoodie")` returns the seed hoodie in Claude / MCP Inspector | WS3 | screenshot in the channel |
 | T+60 | Woo demo store up behind a tunnel with sample products, `bacs` and flat-rate shipping; `WOO_DEMO_URL` shared | WS4 | `GET $WOO_DEMO_URL/wp-json/wc/store/v1/products` returns 200 |
@@ -1807,7 +1773,7 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
 | T+90 | `POST /api/v1/stores {url: WOO_DEMO_URL}` crawls the Woo demo store into the DB with live progress | WS2 (+WS5 UI) | products visible in `/s/{slug}/products.json` |
 | T+90 | `POST /api/v1/scans` runs the `api` probe on the Woo demo store and the `dom` probe on a JSON-LD store; `/scan/{id}` renders the cards live from Realtime on `scans` | WS2 (+WS5 UI) | `GET /api/v1/scans/{id}` → `status: "done"`, `best_method` set |
 | **T+2h SYNC** | **End to end: Claude → `search_catalog` → `get_product` → `create_checkout` (live Woo quote) → `complete_checkout` (SPT) → Woo order placed; timeline streams** | all | order id visible in Woo admin + `/checkouts/{id}` |
-| T+3h | JSON-LD engine on 2 external demo stores; x402 pay path; discovery files (`llms.txt`, `.well-known/ucp`); scan score → "Make it agent-ready" → A | WS2, WS4, WS3, WS5 | |
+| T+3h | JSON-LD engine on 2 external demo stores; Stripe checkout; discovery files (`llms.txt`, `.well-known/ucp`); scan score → "Make it agent-ready" → A | WS2, WS4, WS3, WS5 | |
 | T+3h | `computer_use` probe streams screenshots to `scan-screenshots` and stops before payment (can be owned by a third person) | WS2 | screenshots render on `/scan/{id}` |
 | T+4h SYNC | Feature-complete for the demo script; everything after this is polish or cut-list items | all | run the demo script once end to end |
 | E−60 | **Code freeze.** Deploy prod to Vercel with all env vars. Delete seed data from the remote DB (`delete from public.stores where metadata->>'seed' = 'true';`; scans cascade). Pre-scan and pre-crawl the demo stores. | WS1 + WS5 | prod smoke passes |
@@ -1832,7 +1798,6 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
    - `Message` adds `path` and `severity`.
    - `CheckoutSession.store` adds `name`, and `CheckoutSession.links[]` always includes the timeline URL.
    - `CompleteCheckoutInput.payment.instruments` is an array of length 1, not a TS tuple.
-   - The x402 `tx_hash` is regex-validated.
 7. **Connectors.** `CheckoutConnector.quote()` takes `QuoteInput` (db-resolved `ResolvedLine[]` + buyer / address / shipping choice) instead of the raw `CreateCheckoutInput`. `continueUrl(store, lines)` likewise.
 8. **Services.**
    - `computeReadiness(store, phase)` replaces `computeReadiness(domain)`.
@@ -1850,7 +1815,7 @@ T = coding start. E = demo time. Each **SYNC** is a 5-minute stand-up: each stre
     - The legacy `products (store_id, url)` unique is dropped; identity is `(store_id, handle)`.
     - Enumerations are enforced with named CHECK constraints, not Postgres enums.
     - Adds `checkouts.messages`, `orders.updated_at`, `crawl_runs.updated_at` and explicit grants.
-11. **Round 2 (DECISIONS.md).** Scan and score is new (not in the synthesis): `scan.ts`, `scans`, the `stores` scan columns, the `scan-screenshots` bucket, `/api/v1/scans`, `scan_store` / `get_scan`. Catalog outputs switch to the UCP product shape (B7). `CrawlLogEntry` gains `step?` and is capped at 50. `CheckoutEventData` is typed. `ALLOWED_TRANSITIONS` adds `order_placed → failed`. `upsert_product_batch` no longer deletes variants. `agent_requests.agent_profile` is added. The x402 route moves to `/pay/x402`. See "Round-2 changes" at the top.
+11. **Round 2 (DECISIONS.md).** Scan and score is new (not in the synthesis): `scan.ts`, `scans`, the `stores` scan columns, the `scan-screenshots` bucket, `/api/v1/scans`, `scan_store` / `get_scan`. Catalog outputs switch to the UCP product shape (B7). `CrawlLogEntry` gains `step?` and is capped at 50. `CheckoutEventData` is typed. `ALLOWED_TRANSITIONS` adds `order_placed → failed`. `upsert_product_batch` no longer deletes variants. `agent_requests.agent_profile` is added. See "Round-2 changes" at the top.
 
 ## 9. Definition of done (demo)
 
@@ -1861,9 +1826,8 @@ The demo is done when all of these pass **on the production Vercel URL** with th
 - [ ] Pasting a demo URL on `/` opens `/scan/{id}`, which shows the access cascade live (one card per method, screenshots for `computer_use`), then the score report with seconds and USD per agent task. A blocked store shows `blocked`, never a crash.
 - [ ] "Make it agent-ready" on that report starts indexing: detected platform, a live product counter (Realtime, no refresh), and the grade reaches A within 60 s, ending on the store page.
 - [ ] Claude (Desktop or Code), with only `https://<app>/api/mcp` (+ the demo wallet MCP) configured, completes "find me a hoodie under $50 across these stores and buy it" with no human edits. It ends at `status: "completed"` with `order.merchant_order_id`.
-- [ ] That order exists in WooCommerce admin with the payment reference (PI id or tx hash) in its order note. The Stripe test dashboard shows the captured PaymentIntent.
+- [ ] That order exists in WooCommerce admin with the payment reference (Stripe PaymentIntent id) in its order note. The Stripe test dashboard shows the captured PaymentIntent.
 - [ ] `/checkouts/{id}` shows every transition (`quoting → awaiting_payment → payment_authorized → placing_order → order_placed → completed`) as it happens.
 - [ ] `create_checkout` on the Magento store returns `status: "requires_escalation"` with a working `continue_url`.
 - [ ] Claim flow (or its slide) works for one store. The metrics strip shows non-zero `agent_requests`.
-- [ ] Optional second act: an x402 payment on Base Sepolia completes a second order, and the BaseScan link opens.
 - [ ] A backup video of the full run is recorded and saved in `docs/demo/`. Seed data is removed from prod.

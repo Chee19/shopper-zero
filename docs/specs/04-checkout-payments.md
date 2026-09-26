@@ -1,9 +1,11 @@
 # 04: WS4 Checkout and payments (implementation spec)
 
+> **Current hackathon override:** external vendors are mocked, per Pierre's latest instruction. Run the working local checkout at `/demo/checkout`; see [the implementation/runbook](../guides/checkout.md). Live Stripe/SPT calls, Woo Docker/tunnels and a separate wallet service below are deferred. Preserve the shared service/tool interfaces, persistence, idempotency, failure handling and handoff. Never present mock receipts as live vendor evidence.
+
 > **Round-2 changes (binding: `docs/specs/DECISIONS.md`; canonical contracts: `00-overview-and-contracts.md` §6)**
 > - **B5 connectors:** `CheckoutConnector.quote(store, input: QuoteInput, prev)` and `continueUrl(store, lines: ResolvedLine[])` exactly as in 00. The round-1 `_resolved` workaround is gone. `CheckoutState` includes **`handoff`** (→ `requires_escalation`). The handoff connector now goes `quoting → handoff`, and `requires_action` is used only for SPT 3DS (mocked).
 > - **Transitions** come from the contract's `ALLOWED_TRANSITIONS`. Same-state updates that the table doesn't list (requote while quoting, placement unknown, capture failed) use `annotate()`, which patches the row and logs an event without changing state. Only `awaiting_payment` expires; a 3DS `requires_action` fails after the TTL.
-> - **Errors** use `AppError` + `ApiErrorCode` from `src/lib/errors.ts` (00 §6.2). HTTP goes through WS1's `src/lib/http.ts` (`route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`). DB access goes through WS1's `src/lib/db` checkout helpers (B12). The WS4 `repo.ts` keeps only the payment-lock RPC wrappers.
+> - **Errors** use `AppError` + `ApiErrorCode` from `src/shared/errors.ts` (00 §6.2). HTTP goes through WS1's `src/shared/http.ts` (`route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`). DB access goes through WS1's `src/infrastructure/database` checkout helpers (B12). The WS4 `repo.ts` keeps only the payment-lock RPC wrappers.
 > - **Service signatures** take `ctx: RequestContext` and implement `CheckoutService` (00 §6.7), including `listCheckoutEvents`. The MCP tool input schemas and wallet schemas come from contracts (00 §6.8); the round-1 local `schemas.ts` is dropped. The one exception: `create_checkout`/`update_checkout` extend the contract schemas to also accept Shopify-style line items `{item:{id}, quantity}` (§12.1).
 > - **Session shape** follows 00:
 >   - `store.name`, `links[]` with the timeline link, `LineItem.variant_title/url`;
@@ -12,7 +14,7 @@
 >   - Woo shipping option ids `"{package}:{rate_id}"`;
 >   - `QUOTE_TTL_SECONDS` constant (the `CHECKOUT_QUOTE_TTL_SECONDS` env var is removed);
 >   - demo wallet guard `DEMO_WALLET_ENABLED` (`flags.demoWalletEnabled()`).
-> - **Accepted (no longer requests):** B6 (`/pay/x402`), B9 (Woo ids), B10 (`resolveCheckoutConnector`), B15 (WS4 migration), B4 (`get_order` in WS4's registrar), B14 (WS5 CCR-5 event keys and CCR-6 `timeline_url`).
+> - **Accepted (no longer requests):** B9 (Woo ids), B10 (`resolveCheckoutConnector`), B15 (WS4 migration), B4 (`get_order` in WS4's registrar), B14 (WS5 CCR-5 event keys and CCR-6 `timeline_url`).
 > - **Scan feature:** `resolveCheckoutConnector(store)` reads `stores.best_method` and `stores.dom_recipe` (§8.0). A **stretch** `browser` connector (§8.3) replays the DOM recipe with Playwright/Stagehand. It builds a cart and hands off a live browser session or a filled checkout, and it never submits payment unless the store is on the placement allowlist.
 > - **MCP (coordinator round-2 items + WS3 CR-5):**
 >   - `registerCheckoutTools` does **not** log tool calls; WS3's `instrumentServer` is the only writer of `agent_requests`. Checkout events still go to `checkout_events`.
@@ -21,47 +23,41 @@
 >   - `complete_checkout` has `destructiveHint: true`.
 >   - The `ucp` envelope (CR-5d) is declined because structuredContent must equal the REST body. See §12.
 
-- **Stream:** WS4 (checkout state machine, connectors, payment rails, checkout REST, x402 pay route, demo wallet MCP, Woo demo store infra).
+- **Stream:** WS4 (checkout state machine, connectors, payment rails, checkout REST, demo wallet MCP, Woo demo store infra).
 - **Precedence:**
   1. `docs/specs/DECISIONS.md` wins over everything.
   2. `00-overview-and-contracts.md` §6 is the canonical contract; this spec never redefines a contract type, it imports it.
   3. Sibling specs win for their own files; this spec wins for WS4 files.
   4. Remaining requests are in §17.
-- **Research inputs:** `docs/research/00-SYNTHESIS.md`, `07-checkout-execution.md`, `02-x402-payments.md`, `03-stripe-agentic-payments.md`, and the checkout parts of `01`/`04`.
+- **Research inputs:** `docs/research/00-SYNTHESIS.md`, `07-checkout-execution.md`, `03-stripe-agentic-payments.md`, and the checkout parts of `01`/`04`.
 - **Stack facts checked for this spec (2026-09-26):**
   - `next@16.3.6`: route handlers get `ctx.params` as a Promise. The `edge` runtime is deprecated, so don't export `runtime`. `after()` comes from `next/server` and runs up to the route's `maxDuration`. See `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/route.md` and `.../04-functions/after.md`.
-  - `npm view`: `@x402/{core,next,evm,fetch}@2.27.0`, `mcp-handler@2.2.0` (peer `@modelcontextprotocol/server ^2.0.0`), `@modelcontextprotocol/server@2.1.0`, `stripe@22.6.2`, `viem@2.56.9`, `zod@4.6.5`.
-  - x402 package internals were read from the 2.27.0 tarballs:
-    - `withX402(handler, routes, server)` passes the handler **only `request`**.
-    - `x402HTTPResourceServer.onProtectedRequest(hook)` can abort with 403 before any pricing.
-    - `ExactEvmScheme` (server) supports `paymentFlow: "upfront"` for EIP-3009.
-    - A throwing `price()` surfaces as HTTP 500.
-    - The client default spend cap is **`$1`**, so we must raise it.
-  - `curl https://x402.org/facilitator/supported` today lists `{x402Version:2, scheme:"exact", network:"eip155:84532"}`.
+  - `npm view`: `mcp-handler@2.2.0` (peer `@modelcontextprotocol/server ^2.0.0`), `@modelcontextprotocol/server@2.1.0`, `stripe@22.6.2`, `zod@4.6.5`.
 
 ---
 
+## MVP scope
+
+One Stripe test-payment path only. The demo-token helper issues SPTs (or an explicitly labelled test PaymentMethod fallback); it does not hold cryptocurrency. Earlier two-rail research is background only.
+
 ## 0. TL;DR for the implementer
 
-1. At T+0, run the two spikes (§4). Record `STRIPE_SPT_MODE=spt|fallback` in `.env.local` and fund the demo wallet.
+1. At T+0, run the Stripe feasibility check (§4). Record `STRIPE_SPT_MODE=spt|fallback` in `.env.local`.
 2. Bring up the Woo demo store (§5): run `infra/woo/setup.sh`, start the tunnel, run `infra/woo/smoke.sh` → PASS. Index the store through WS2 (`POST /api/v1/stores`).
 3. Build in this order:
-   - `src/lib/checkout/{state,repo,session}.ts`
+   - `src/features/checkout/{state,repo,session}.ts`
    - `connectors/woo.ts`
    - `service.ts` (create, update, get)
    - REST create/get/update
    - `payments/stripe.ts` + complete (SPT)
    - `connectors/handoff.ts`
-   - `payments/x402.ts` + the pay route
    - demo wallet MCP
-   - `scripts/agent-x402.ts`
    - The stretch `connectors/browser.ts` comes only after M10.
-4. Ship `src/lib/checkout/mcp-tools.ts` (`registerCheckoutTools`) and the one-line re-export `src/lib/mcp/checkout-tools.ts` by **T+60**. WS3 imports the latter. Until the Woo path works, `create_checkout` uses the handoff connector (WS3 CR-5b).
+4. Ship `src/features/checkout/mcp-tools.ts` (`registerCheckoutTools`) and the one-line re-export `src/infrastructure/mcp/checkout-tools.ts` by **T+60**. WS3 imports the latter. Until the Woo path works, `create_checkout` uses the handoff connector (WS3 CR-5b).
 5. Safety invariants. Never break these:
    - Headless orders are placed **only** on allowlisted domains (our Woo store).
    - No connector ever types card data or clicks "pay" on a merchant site.
    - Stripe runs on `sk_test_` keys only.
-   - x402 runs on `eip155:84532` only.
    - `checkout_events.message`/`data` never contain PII.
 
 ---
@@ -75,45 +71,43 @@
   - `handoff` (every other store);
   - `browser` (**stretch**, DOM-recipe replay, §8.3);
   - `magento_guest` (stretch; not specified beyond §16).
-- Payment rails behind `PaymentRail`: `stripe_spt` (manual capture, then place, then capture or void) and `x402` (v2 `exact`, Base Sepolia USDC, `upfront`).
-- REST: `/api/v1/checkouts`, `/api/v1/checkouts/{id}`, `/complete`, `/cancel`, `/pay/x402`, and `/api/v1/orders/{id}`.
+- Payment rails behind `PaymentRail`: `stripe_spt` (manual capture, then place, then capture or void).
+- REST: `/api/v1/checkouts`, `/api/v1/checkouts/{id}`, `/complete`, `/cancel`, and `/api/v1/orders/{id}`.
 - The MCP checkout tool registrar (`registerCheckoutTools`), which WS3's `/api/mcp` composes (B4).
-- The demo wallet MCP at `/api/demo-wallet/mcp` and the scripts `scripts/agent-x402.ts` and `scripts/agent-spt.ts`.
+- The demo wallet MCP at `/api/demo-wallet/mcp` and the script `scripts/agent-spt.ts`.
 - Woo demo store infrastructure (`infra/woo/**`).
 
 ### 1.2 Out of scope
 - Catalog reads and `search_catalog` (WS3).
 - Crawling, scanning, `dom_recipe` discovery and `verifyOffer` (WS2). WS4 only **reads** `stores.best_method` / `stores.dom_recipe`.
 - UI (WS5). WS5 reads `getCheckout()` and `checkout_events`.
-- `src/lib/db/**`, `src/lib/errors.ts`, `src/lib/http.ts`, `src/lib/env.ts` and the proxy matcher (WS1).
+- `src/infrastructure/database/**`, `src/shared/errors.ts`, `src/shared/http.ts`, `src/shared/env.ts` and the proxy matcher (WS1).
 - Package installs (WS1 installs the union; WS4 installs nothing).
 
 ### 1.3 Owned files
 
 ```
-src/lib/checkout/
+src/features/checkout/
   index.ts              # barrel: export const checkoutService: CheckoutService + named functions (00 §6.7)
   service.ts            # service implementation (§2.1, §10)
   state.ts              # transition(), annotate(), expireIfDue() over ALLOWED_TRANSITIONS
-  repo.ts               # ONLY: acquirePaymentLock / releasePaymentLock (RPC wrappers); everything else via @/lib/db
+  repo.ts               # ONLY: acquirePaymentLock / releasePaymentLock (RPC wrappers); everything else via @/infrastructure/database
   session.ts            # CheckoutRecord -> CheckoutSession, payment handlers, messages, summarize()
-  payment-errors.ts     # internal: PaymentDeclinedError, PaymentActionRequiredError, PaymentNotFoundError, WooError, PriceDriftError
+  payment-errors.ts     # internal: PaymentDeclinedError, PaymentActionRequiredError, WooError, PriceDriftError
   mcp-tools.ts          # registerCheckoutTools(server) (00 §6.8 location)
   connectors/index.ts   # getConnector(), resolveCheckoutConnector(), checkoutAllowlist()
   connectors/woo.ts     # wooConnector
   connectors/handoff.ts # handoffConnector
   connectors/browser.ts # browserConnector (STRETCH, §8.3)
-src/lib/payments/
+src/features/checkout/payments/
   index.ts              # getRail(), railForHandler()
   stripe.ts             # stripeRequest(), stripeSptRail, issueTestSpt()
-  x402.ts               # x402 resource server + HTTP server, x402Rail, checkoutIdFromPath()
-src/lib/mcp/checkout-tools.ts          # one line: export { registerCheckoutTools } from "@/lib/checkout/mcp-tools";  (WS3's import path)
-src/lib/demo-wallet/tools.ts           # registerDemoWalletTools(server)
+src/infrastructure/mcp/checkout-tools.ts          # one line: export { registerCheckoutTools } from "@/features/checkout/mcp-tools";  (WS3's import path)
+src/features/checkout/demo/wallet/tools.ts           # registerDemoWalletTools(server)
 src/app/api/v1/checkouts/route.ts                 # POST
 src/app/api/v1/checkouts/[id]/route.ts            # GET, PUT
 src/app/api/v1/checkouts/[id]/complete/route.ts   # POST
 src/app/api/v1/checkouts/[id]/cancel/route.ts     # POST
-src/app/api/v1/checkouts/[id]/pay/x402/route.ts   # POST (x402-protected)
 src/app/api/v1/orders/[id]/route.ts               # GET
 src/app/api/demo-wallet/mcp/route.ts              # GET, POST (test mode only)
 infra/woo/docker-compose.woo.yml
@@ -121,7 +115,6 @@ infra/woo/.env.woo.example
 infra/woo/setup.sh
 infra/woo/setup.php
 infra/woo/smoke.sh
-scripts/agent-x402.ts
 scripts/agent-spt.ts
 supabase/migrations/20260926024000_ws4_checkout.sql
 ```
@@ -130,26 +123,26 @@ supabase/migrations/20260926024000_ws4_checkout.sql
 
 | Need | From | Name | If late |
 |---|---|---|---|
-| Contract types + schemas | WS1 `@/lib/contracts` | `CheckoutState`, `STATE_TO_STATUS`, `ALLOWED_TRANSITIONS`, `QuoteInput`, `ResolvedLine`, `Quote`, `CheckoutConnector`, `PaymentRail`, `PaymentReceipt`, `CheckoutRecord`, `CheckoutPaymentRecord`, `CheckoutSession`, `Order`, `CheckoutEvent`, `MESSAGE_CODES`, `QUOTE_TTL_SECONDS`, `PAYMENT_HANDLER_IDS`, `X402_NETWORKS`, `RequestContext`, `CheckoutService`, the MCP/wallet input schemas (00 §6.8), `DomRecipe`, `AccessMethod` (DECISIONS A) | Temporary local copy in `src/lib/checkout/_contracts.tmp.ts`; delete at T+30 |
-| Errors / HTTP / env / log | WS1 `src/lib/{errors,http,env,log}.ts` | `AppError`, `toAppError`, `route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`, `CORS_HEADERS`, `optionalEnv`, `requireEnv`, `appUrl`, `flags`, `log` | Minimal local shims with the same names, deleted when WS1 lands |
-| DB helpers | WS1 `@/lib/db` (B12) | `getVariantsForCheckout`, `getStoreById`, `insertCheckout`, `getCheckoutRecord`, `getCheckoutByIdempotencyKey`, `updateCheckoutRecord(id, patch, {expectState})`, `insertCheckoutEvent`, `listCheckoutEvents`, `insertOrder`, `getOrder`, `getOrderByCheckoutId`, `updateOrderStatus`, `logAgentRequest` | none; these are blocking. Use the seed |
+| Contract types + schemas | WS1 `@/contracts` | `CheckoutState`, `STATE_TO_STATUS`, `ALLOWED_TRANSITIONS`, `QuoteInput`, `ResolvedLine`, `Quote`, `CheckoutConnector`, `PaymentRail`, `PaymentReceipt`, `CheckoutRecord`, `CheckoutPaymentRecord`, `CheckoutSession`, `Order`, `CheckoutEvent`, `MESSAGE_CODES`, `QUOTE_TTL_SECONDS`, `PAYMENT_HANDLER_IDS`, `RequestContext`, `CheckoutService`, the MCP/wallet input schemas (00 §6.8), `DomRecipe`, `AccessMethod` (DECISIONS A) | Temporary local copy in `src/features/checkout/_contracts.tmp.ts`; delete at T+30 |
+| Errors / HTTP / env / log | WS1 `src/shared/{errors,http,env,log}.ts` | `AppError`, `toAppError`, `route`, `json`, `errorResponse`, `preflight`, `parseJsonBody`, `CORS_HEADERS`, `optionalEnv`, `requireEnv`, `appUrl`, `flags`, `log` | Minimal local shims with the same names, deleted when WS1 lands |
+| DB helpers | WS1 `@/infrastructure/database` (B12) | `getVariantsForCheckout`, `getStoreById`, `insertCheckout`, `getCheckoutRecord`, `getCheckoutByIdempotencyKey`, `updateCheckoutRecord(id, patch, {expectState})`, `insertCheckoutEvent`, `listCheckoutEvents`, `insertOrder`, `getOrder`, `getOrderByCheckoutId`, `updateOrderStatus`, `logAgentRequest` | none; these are blocking. Use the seed |
 | Tables | WS1 core migration | `checkouts` (incl. `messages` jsonb), `checkout_events`, `orders`, `stores.best_method`, `stores.dom_recipe` | none |
-| MCP glue | WS1/WS3 `src/lib/mcp/{types,result}.ts` | `McpServer` type, `toolResult`, `toolError` | `import type { McpServer } from "@modelcontextprotocol/server"` |
-| Packages | WS1 install | `zod@^4`, `mcp-handler@2.2.0`, `@modelcontextprotocol/server@2.1.0`, `stripe`, `@x402/*@2.27.0`, `viem`; stretch `playwright-core`, `@browserbasehq/stagehand@4.1.0` | none |
+| MCP glue | WS1/WS3 `src/infrastructure/mcp/{types,result}.ts` | `McpServer` type, `toolResult`, `toolError` | `import type { McpServer } from "@modelcontextprotocol/server"` |
+| Packages | WS1 install | `zod@^4`, `mcp-handler@2.2.0`, `@modelcontextprotocol/server@2.1.0`, `stripe`; stretch `playwright-core`, `@browserbasehq/stagehand@4.1.0` | none |
 | Indexed demo store | WS2 `POST /api/v1/stores {url}` (Woo adapter) | products + variants rows for the demo store | Seed SQL in §5.7 |
 
 ---
 
 ## 2. Exports (exact signatures)
 
-### 2.1 `src/lib/checkout` (`index.ts` re-exports from `service.ts`)
+### 2.1 `src/features/checkout` (`index.ts` re-exports from `service.ts`)
 
 ```ts
 import "server-only";
 import type {
   CheckoutEvent, CheckoutService, CheckoutSession, CompleteCheckoutInput, CreateCheckoutInput,
   Order, RequestContext, UpdateCheckoutInput,
-} from "@/lib/contracts";
+} from "@/contracts";
 
 export function createCheckout(input: CreateCheckoutInput, ctx: RequestContext): Promise<CheckoutSession>;
 export function updateCheckout(id: string, input: UpdateCheckoutInput, ctx: RequestContext): Promise<CheckoutSession>;
@@ -160,11 +153,6 @@ export function getOrder(id: string): Promise<Order>;
 export function listCheckoutEvents(checkoutId: string): Promise<CheckoutEvent[]>;
 export const checkoutService: CheckoutService;   // object literal of the seven functions above
 
-// WS4-internal (used only by the x402 pay route; not in the cross-stream contract):
-export type X402Settlement = { transaction: string; payer: string | null; network: string; amount_atomic: string | null };
-export function recordX402Settlement(checkoutId: string, s: X402Settlement): Promise<void>;
-export function finalizeX402Checkout(checkoutId: string, fallback?: X402Settlement | null): Promise<CheckoutSession>;
-export function getX402PayableCheckout(checkoutId: string): Promise<{ total_minor: number; currency: "USD" } | { reason: string }>;
 ```
 
 - Protocol errors throw `AppError` (00 §6.2). Business outcomes **return** a `CheckoutSession` with `messages[]` (HTTP 200): missing info, out of stock, declined, handoff, placement failure.
@@ -173,13 +161,13 @@ export function getX402PayableCheckout(checkoutId: string): Promise<{ total_mino
 ### 2.2 Plug-in implementations (types from 00 §6.6)
 
 ```ts
-// src/lib/checkout/connectors/woo.ts
+// src/features/checkout/connectors/woo.ts
 export const wooConnector: CheckoutConnector;          // id: "woo_store_api"
-// src/lib/checkout/connectors/handoff.ts
+// src/features/checkout/connectors/handoff.ts
 export const handoffConnector: CheckoutConnector;      // id: "handoff"
-// src/lib/checkout/connectors/browser.ts  (STRETCH)
+// src/features/checkout/connectors/browser.ts  (STRETCH)
 export const browserConnector: CheckoutConnector;      // id: "browser"
-// src/lib/checkout/connectors/index.ts
+// src/features/checkout/connectors/index.ts
 export type ConnectorStore = Pick<Store, "domain" | "base_url" | "platform"> & {
   best_method?: AccessMethod | "none" | null;          // stores.best_method (DECISIONS A)
   dom_recipe?: DomRecipe | null;                       // stores.dom_recipe  (DECISIONS A)
@@ -188,16 +176,10 @@ export function getConnector(id: CheckoutConnectorId): CheckoutConnector;   // "
 export function resolveCheckoutConnector(store: ConnectorStore): CheckoutConnectorId;
 export function checkoutAllowlist(): string[];         // lowercased hosts
 
-// src/lib/payments/stripe.ts
+// src/features/checkout/payments/stripe.ts
 export const stripeSptRail: PaymentRail;               // id: "stripe_spt"
 export function issueTestSpt(args: { amount: number; currency: string; ttlSeconds?: number }): Promise<{ token: string; mode: "spt" | "fallback"; expires_at: string }>;
-// src/lib/payments/x402.ts
-export const x402Rail: PaymentRail;                    // id: "x402"
-export const X402_PAY_ROUTE = "/api/v1/checkouts/[id]/pay/x402";
-export function getX402HttpServer(): x402HTTPResourceServer;
-export function checkoutIdFromPath(path: string): string | null;
-export function usdPrice(minor: number): `$${string}`;           // 4900 -> "$49.00"
-// src/lib/payments/index.ts
+// src/features/checkout/payments/index.ts
 export function getRail(id: PaymentRailId): PaymentRail;
 export function railForHandler(handlerId: string): PaymentRailId | null;
 ```
@@ -205,14 +187,14 @@ export function railForHandler(handlerId: string): PaymentRailId | null;
 ### 2.3 Registrars
 
 ```ts
-// src/lib/checkout/mcp-tools.ts   (re-exported from src/lib/mcp/checkout-tools.ts)
-import type { McpServer } from "@/lib/mcp/types";      // fallback: "@modelcontextprotocol/server"
+// src/features/checkout/mcp-tools.ts   (re-exported from src/infrastructure/mcp/checkout-tools.ts)
+import type { McpServer } from "@/infrastructure/mcp/types";      // fallback: "@modelcontextprotocol/server"
 export function registerCheckoutTools(server: McpServer): void;
 // registers: create_checkout, update_checkout, get_checkout, complete_checkout, cancel_checkout, get_order (B4)
 
-// src/lib/demo-wallet/tools.ts
+// src/features/checkout/demo/wallet/tools.ts
 export function registerDemoWalletTools(server: McpServer): void;
-// registers: wallet_issue_spt, wallet_pay_x402 (00 §6.8 DEMO_WALLET_TOOL_INPUTS)
+// registers: wallet_issue_spt (00 §6.8 DEMO_WALLET_TOOL_INPUTS)
 ```
 
 ### 2.4 Errors
@@ -228,15 +210,14 @@ Protocol errors are `new AppError(code, message, details?)` with `ApiErrorCode` 
 | Transition not allowed, or payment lock held | `invalid_state` (409) | `{ state, allowed }` / `{ reason: "payment_in_progress" }` |
 | Same `Idempotency-Key`, different body | `idempotency_conflict` (409) | |
 | Complete/update on an expired checkout | `gone` (410) | |
-| Variants from two stores; handler not offered; non-USD for x402 | `unprocessable` (422) | |
-| Missing Stripe/x402 env, or stubbed code | `not_implemented` (501) | |
+| Variants from two stores; handler not offered | `unprocessable` (422) | |
+| Missing Stripe env, or stubbed code | `not_implemented` (501) | |
 | Merchant / Stripe / facilitator error at quote | `upstream_error` (502) / `upstream_timeout` (504) | |
 
-Internal (never leave the service; mapped to messages or AppError), in `src/lib/checkout/payment-errors.ts`:
+Internal (never leave the service; mapped to messages or AppError), in `src/features/checkout/payment-errors.ts`:
 ```ts
 export class PaymentDeclinedError extends Error { constructor(public declineCode: string, public reference?: string) { super(declineCode); } }
 export class PaymentActionRequiredError extends Error { constructor(public reference: string) { super("requires_action"); } }
-export class PaymentNotFoundError extends Error {}            // x402 receipt not matched
 export class WooError extends Error { constructor(public code: string, message: string, public status: number) { super(message); } }
 export class PriceDriftError extends Error { constructor(public expected: number, public actual: number) { super("price_drift"); } }
 ```
@@ -247,17 +228,11 @@ export class PriceDriftError extends Error { constructor(public expected: number
 
 | Var | Example | Required | Notes |
 |---|---|---|---|
-| `APP_URL` (`appUrl()`) | `https://shoperzero.vercel.app` | yes | Builds `pay_url` and the timeline link |
+| `APP_URL` (`appUrl()`) | `https://shoperzero.vercel.app` | yes | Builds checkout and timeline links |
 | `STRIPE_SECRET_KEY` | `sk_test_…` | for SPT | The rail refuses anything that doesn't start with `sk_test_` |
 | `STRIPE_PREVIEW_VERSION` | `2026-04-22.preview` | yes | Sent as `Stripe-Version` on SPT calls |
 | `STRIPE_SPT_MODE` | `spt` / `fallback` | yes | Set from the spike result. `fallback` means the wallet issues `pm_card_visa` |
-| `X402_NETWORK` | `eip155:84532` | yes | Anything else is refused |
-| `X402_FACILITATOR_URL` | `https://x402.org/facilitator` | yes | |
-| `X402_PAY_TO` | `0x…` | for x402 | Our receiving address. It needs no funding |
-| `X402_FLOW` | `upfront` / `authorization` | no | Defaults to `upfront`. Use `authorization` only if upfront fails in M7 |
 | `DEMO_WALLET_ENABLED` (`flags.demoWalletEnabled()`) | `true` | wallet | 00 variable. The demo wallet route answers 404 unless it is `true` |
-| `DEMO_WALLET_PRIVATE_KEY` | `0x…` | wallet | The buyer wallet, funded with Base Sepolia USDC |
-| `DEMO_WALLET_MAX_USD` | `$25` | no | Per-payment cap for the demo wallet's x402 client. Default `$25` |
 | `DEMO_WALLET_TOKEN` | random | no | If set, the demo wallet MCP requires `Authorization: Bearer <token>` |
 | `WOO_DEMO_URL` | `https://shop.example.dev` | yes | Origin of our Woo store. Its host is allowlisted automatically |
 | `CHECKOUT_ALLOWED_DOMAINS` | `shop.example.dev,localhost:8080` | no | Extra hosts allowed for headless placement. Default: host of `WOO_DEMO_URL` |
@@ -271,11 +246,11 @@ export class PriceDriftError extends Error { constructor(public expected: number
 The quote TTL is the contract constant `QUOTE_TTL_SECONDS` (600). It has no env override.
 ---
 
-## 4. T+0 spikes (15 minutes each, run in parallel)
+## 4. T+0 Stripe feasibility check (15 minutes)
 
 Record every result in the team channel. The decisions these spikes produce are env values.
 
-### 4.1 Spike A: Stripe SPT test helper
+### 4.1 Stripe SPT test helper
 
 **Prep:** get a test secret key from https://dashboard.stripe.com/test/apikeys.
 ```bash
@@ -339,59 +314,6 @@ curl -sS https://api.stripe.com/v1/payment_intents -u "$STRIPE_SECRET_KEY:" \
 - Otherwise → `STRIPE_SPT_MODE=fallback`.
 - Both paths failing means the Stripe key is wrong. Fix the key; don't cut the rail.
 
-### 4.2 Spike B: x402 facilitator, packages, wallet
-
-**B1. Facilitator.**
-```bash
-curl -sS https://x402.org/facilitator/supported | jq '.kinds[] | select(.network=="eip155:84532")'
-```
-- **Pass:** the output includes `{"x402Version":2,"scheme":"exact","network":"eip155:84532"}`. It was present on 2026-09-26, along with `upto` and `batch-settlement`.
-
-**B2. Packages exist.** These commands are read-only and install nothing.
-```bash
-for p in @x402/core @x402/next @x402/evm @x402/fetch; do echo "$p $(npm view $p@2.27.0 version)"; done
-npm view mcp-handler@2.2.0 peerDependencies
-npm view @modelcontextprotocol/server@2.1.0 version
-npm view viem version; npm view stripe version; npm view zod version
-```
-- **Pass:** every `@x402/*` prints `2.27.0`, and mcp-handler's peers include `@modelcontextprotocol/server: '^2.0.0'`.
-- These were verified on 2026-09-26: 2.27.0, 2.2.0/2.1.0, viem 2.56.9, stripe 22.6.2, zod 4.6.5.
-
-**B3. Create two keys.** One is the buyer (demo wallet); the other is the receiver `X402_PAY_TO`. Use a scratch dir outside the repo so the project lockfile isn't touched.
-```bash
-mkdir -p /tmp/sz-wallet && cd /tmp/sz-wallet && npm init -y >/dev/null && npm i --silent viem@2.56.9
-node -e '
-const {generatePrivateKey, privateKeyToAccount} = require("viem/accounts");
-for (const n of ["DEMO_WALLET", "X402_PAY_TO"]) {
-  const pk = generatePrivateKey();
-  console.log(`# ${n}\n${n}_PRIVATE_KEY=${pk}\n${n}_ADDRESS=${privateKeyToAccount(pk).address}\n`);
-}'
-```
-- Put these in `.env.local`:
-  - `DEMO_WALLET_PRIVATE_KEY=<DEMO_WALLET_PRIVATE_KEY>`
-  - `X402_PAY_TO=<X402_PAY_TO_ADDRESS>`
-- Store the pay-to private key in the team password manager. It is only needed for the stretch real refund.
-- Never commit either key.
-
-**B4. Fund the buyer.**
-- Open https://faucet.circle.com, choose **Base Sepolia** and **USDC**, paste `DEMO_WALLET_ADDRESS`, and submit.
-- The faucet gives about 10–20 USDC per request, rate-limited per address (**UNVERIFIED** exact limits).
-- No ETH is needed, because the facilitator pays gas for EIP-3009 transfers.
-- Check the balance (USDC on Base Sepolia is `0x036CbD53842c5426634e7929541eC2318f3dCF7e`):
-```bash
-ADDR=0xYourDemoWalletAddress
-DATA=0x70a08231$(printf '%064s' "$(echo ${ADDR#0x} | tr 'A-F' 'a-f')" | tr ' ' 0)
-curl -sS https://sepolia.base.org -H 'content-type: application/json' \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\"data\":\"$DATA\"},\"latest\"]}" \
-  | jq -r .result | xargs printf '%d\n' | awk '{printf "%.2f USDC\n", $1/1e6}'
-```
-- **Pass:** the balance is at least 8.00 USDC. That covers the x402 demo purchase (Sticker Pack $3 + Standard shipping $5 = $8.00, see §5.4). Request the faucet again or from teammates' browsers to build a buffer.
-- **Fail (faucet down):** use the CDP faucet (https://portal.cdp.coinbase.com → Faucets, Base Sepolia USDC; **UNVERIFIED**), or cut the x402 act per synthesis cut-list item 9.
-
-**Spike B decision:** B1 and B2 pass and the wallet is funded → build x402 at M7. The upfront flow itself is verified later, in M7 (§16).
-
----
-
 ## 5. WooCommerce demo store infrastructure
 
 Target:
@@ -400,7 +322,7 @@ Target:
 - USD, US base address, no tax;
 - `bacs` enabled;
 - a US zone with two flat rates (Standard $5, Express $15) and a rest-of-world rate;
-- 6 products, including **a hoodie under $50** and a **$3 item for the x402 act**.
+- 6 products, including **a hoodie under $50** and a **$3 item for a low-value Stripe test**.
 
 ### 5.1 `infra/woo/docker-compose.woo.yml` (full content)
 
@@ -627,7 +549,7 @@ $ids['SZ-HOODIE-HEAVY'] = sz_simple('Heavyweight Hoodie', 'SZ-HOODIE-HEAVY', '68
   '450gsm heavyweight fleece hoodie. Over the $50 budget on purpose.', [$hoodies], 20);
 $ids['SZ-BEANIE'] = sz_simple('Merino Beanie', 'SZ-BEANIE', '18.00', 'Soft merino wool beanie.', [$acc], 40);
 $ids['SZ-STICKERS'] = sz_simple('ShoperZero Sticker Pack', 'SZ-STICKERS', '3.00',
-  'Five vinyl stickers. Cheap enough for a testnet USDC purchase.', [$acc], 500);
+  'Five vinyl stickers. A low-value item for a Stripe test purchase.', [$acc], 500);
 $ids['SZ-MUG'] = sz_simple('Enamel Camp Mug', 'SZ-MUG', '12.00', 'Out of stock on purpose (tests).', [$home], 0);
 
 // variable product: Zip Hoodie, sizes S/M/L at 48.00
@@ -689,7 +611,7 @@ Demo product table:
 | SZ-ZIP-HOODIE-{S,M,L} | ShoperZero Zip Hoodie | $48.00 | Variation path |
 | SZ-HOODIE-HEAVY | Heavyweight Hoodie | $68.00 | Excluded by "< $50" |
 | SZ-BEANIE | Merino Beanie | $18.00 | Filler |
-| SZ-STICKERS | ShoperZero Sticker Pack | $3.00 | **x402 act**: $3 + $5 = **$8.00 USDC** (fits the faucet) |
+| SZ-STICKERS | ShoperZero Sticker Pack | $3.00 | Optional low-value Stripe test: $3 + $5 shipping = **$8.00** |
 | SZ-MUG | Enamel Camp Mug | $12.00, stock 0 | Out-of-stock test |
 
 ### 5.5 `infra/woo/smoke.sh` (full content): a raw Store API order, which is the acceptance test for M1
@@ -785,7 +707,7 @@ If the sandbox offers SSH or wp-cli (**UNVERIFIED**), run `wp eval-file setup.ph
 
 ---
 
-## 6. Checkout state machine (`src/lib/checkout/state.ts`)
+## 6. Checkout state machine (`src/features/checkout/state.ts`)
 
 ### 6.1 States (contract `CHECKOUT_STATES` → `STATE_TO_STATUS`, 00 §6.6)
 
@@ -795,10 +717,10 @@ If the sandbox offers SSH or wp-cli (**UNVERIFIED**), run `wp eval-file setup.ph
 | `awaiting_payment` | ready_for_complete | Quote complete. `total_minor` frozen and `expires_at = now + QUOTE_TTL_SECONDS`. |
 | `handoff` | requires_escalation | No headless connector for this store. `continue_url` is set (prefilled cart, PDP, or a stretch browser live-view). Terminal except `canceled`. |
 | `requires_action` | requires_escalation | SPT PaymentIntent needed 3DS (**mocked**). `continue_url` is our timeline page. |
-| `payment_authorized` | complete_in_progress | SPT authorized (manual capture) or x402 settled on-chain. |
+| `payment_authorized` | complete_in_progress | SPT authorized (manual capture). |
 | `placing_order` | complete_in_progress | `POST /checkout` to the merchant is in flight. |
 | `order_placed` | completed | The merchant order exists; SPT is not yet captured. |
-| `completed` | completed | Captured (SPT) or already settled (x402); orders row `confirmed`. |
+| `completed` | completed | Stripe payment captured; orders row `confirmed`. |
 | `refunding` | complete_in_progress | Placement failed; voiding or refunding. |
 | `failed` | canceled | Terminal failure (money voided, refunded or refund recorded as simulated). |
 | `expired` | canceled | Quote TTL passed in `awaiting_payment`. |
@@ -816,7 +738,7 @@ If the sandbox offers SSH or wp-cli (**UNVERIFIED**), run `wp eval-file setup.ph
 | `awaiting_payment` | `awaiting_payment` | Requote via `update_checkout` (new total and TTL), or payment declined (lock released) |
 | `awaiting_payment` | `quoting` | An update removed required info, or a requote now misses something (e.g. item went out of stock) |
 | `awaiting_payment` | `requires_action` | SPT PaymentIntent `requires_action` (3DS; mocked; the PI is canceled) |
-| `awaiting_payment` | `payment_authorized` | SPT PI `requires_capture`, or x402 settlement recorded |
+| `awaiting_payment` | `payment_authorized` | SPT PI `requires_capture` |
 | `awaiting_payment` | `expired` | Lazy check: `expires_at < now()` on any read or write |
 | `awaiting_payment` | `canceled` | `cancel_checkout` with no active payment lock |
 | `requires_action` | `failed` | Lazy check after `expires_at` (buyer never authenticated) |
@@ -827,7 +749,7 @@ If the sandbox offers SSH or wp-cli (**UNVERIFIED**), run `wp eval-file setup.ph
 | `placing_order` | `order_placed` | Merchant order id received |
 | `placing_order` | `refunding` | Placement error, price drift, or (stretch browser) CAPTCHA at submit |
 | `placing_order` | `requires_action` | Allowed by the contract; **WS4 does not use it**. Money would stay held, so we void through `refunding` instead |
-| `order_placed` | `completed` | SPT capture ok, or x402 (no-op capture) |
+| `order_placed` | `completed` | SPT capture succeeds |
 | `refunding` | `failed` | Void, refund or simulated refund done |
 | `handoff` | `canceled` | `cancel_checkout` |
 
@@ -839,13 +761,13 @@ If the sandbox offers SSH or wp-cli (**UNVERIFIED**), run `wp eval-file setup.ph
 ### 6.3 `transition()`, `annotate()` and `expireIfDue()`
 
 ```ts
-import { ALLOWED_TRANSITIONS, type CheckoutRecord, type CheckoutState } from "@/lib/contracts";
-import { AppError } from "@/lib/errors";
-import { insertCheckoutEvent, updateCheckoutRecord, type NewCheckout } from "@/lib/db";
-import { log } from "@/lib/log";
+import { ALLOWED_TRANSITIONS, type CheckoutRecord, type CheckoutState } from "@/contracts";
+import { AppError } from "@/shared/errors";
+import { insertCheckoutEvent, updateCheckoutRecord, type NewCheckout } from "@/infrastructure/database";
+import { log } from "@/shared/log";
 
 export type EventData = {            // exactly WS5 CCR-5 keys (B14); NO PII
-  rail?: PaymentRailId; payment_intent_id?: string; tx_hash?: string; network?: X402Network;
+  rail?: PaymentRailId; payment_intent_id?: string;
   merchant_order_id?: string; merchant_order_url?: string; continue_url?: string;
   amount?: Money; error_code?: string; simulated?: boolean;
 };
@@ -906,14 +828,11 @@ export async function expireIfDue(row: CheckoutRecord): Promise<CheckoutRecord> 
 | quoting → handoff | `No agent checkout on {domain}: handing off ({kind})`, where kind is `prefilled cart`, `product page` or `live browser session` | `{continue_url}` |
 | awaiting_payment → requires_action | `Card needs buyer authentication (3DS)` | `{rail:"stripe_spt", payment_intent_id, simulated:true}` |
 | awaiting_payment → payment_authorized (SPT) | `Card authorized via SPT ({mode})` | `{rail:"stripe_spt", payment_intent_id, amount}` |
-| awaiting_payment → payment_authorized (x402) | `Paid {money} in USDC on Base Sepolia` | `{rail:"x402", tx_hash, network, amount}` |
 | payment_authorized → placing_order | `Placing order on {domain} via {WooCommerce Store API \| browser}` | `{}` |
 | placing_order → order_placed | `Merchant order #{id} placed ({woo_status})` | `{merchant_order_id, merchant_order_url}` |
 | order_placed → completed (SPT) | `Payment captured` | `{rail, payment_intent_id, amount}` |
-| order_placed → completed (x402) | `Complete: payment already settled on-chain` | `{rail, tx_hash, network}` |
 | placing_order → refunding | `Order placement failed: {error_code}` | `{error_code}` |
 | refunding → failed (SPT) | `Authorization voided` | `{rail, payment_intent_id}` |
-| refunding → failed (x402) | `Refund of {money} USDC to payer recorded` | `{rail, tx_hash, simulated:true}` |
 | placing_order (annotate) | `Order placement result unknown ({code})` | `{error_code}` |
 | order_placed (annotate) | `Capture failed; merchant order left on-hold` | `{error_code:"capture_failed", payment_intent_id}` |
 | * → canceled | `Canceled by agent` | `{}` |
@@ -925,9 +844,8 @@ export async function expireIfDue(row: CheckoutRecord): Promise<CheckoutRecord> 
 |---|---|---|
 | Create (REST `Idempotency-Key`, MCP `idempotency_key` → `ctx.idempotency_key`) | `checkouts.idempotency_key` (unique) | `getCheckoutByIdempotencyKey(key)` first. On a hit, compare `sha256(canonical JSON of input)` with `connector_state.request_hash`: equal → return the existing session (REST 200); different → `AppError("idempotency_conflict")`. A unique violation on insert (lost race) → re-select and apply the same rule. |
 | Complete | `input.idempotency_key ?? ctx.idempotency_key`, stored in `payment.idempotency_key` | Same key and the checkout has progressed past `awaiting_payment` → return the current session. No new charge. |
-| Payment lock | `payment.lock = {rail, until}` via RPC `checkout_acquire_payment_lock` (§6.7) | One payment attempt at a time per checkout, across rails. Auto-expires after 120 s. |
+| Payment lock | `payment.lock = {rail, until}` via RPC `checkout_acquire_payment_lock` (§6.7) | One payment attempt at a time per checkout, including duplicate completion requests. Auto-expires after 120 s. |
 | Stripe | `Idempotency-Key: sz_{checkoutId}_pi_{sha256(token)[:12]}` / `sz_{pi}_capture` / `sz_{pi}_cancel` / `sz_{pi}_refund` | Stripe replays the same result for 24 h. A new SPT after a decline gives a new key. |
-| x402 | EIP-3009 nonce (on-chain) + the lock + `transition(awaiting_payment → payment_authorized)` with `expectState` | A replayed signature can't settle twice. A second concurrent signature is rejected by the guard (403). |
 | Merchant order | `connector_state.woo_order_id` + `orders.checkout_id unique` | `placeOrder` returns the existing order when `woo_order_id` is set. On `insertOrder` conflict → `getOrderByCheckoutId`. |
 
 ### 6.6 Quote TTL and the frozen total
@@ -939,10 +857,9 @@ export async function expireIfDue(row: CheckoutRecord): Promise<CheckoutRecord> 
   - With a lock held → `AppError("invalid_state", …, { reason: "payment_in_progress" })`.
   - Past `awaiting_payment` → `invalid_state`.
   - Expired → `gone`.
-- x402 prices from `total_minor` on both the 402 and the paid retry. An update between them changes the amount, so verification fails (`value_mismatch`) and no money moves.
 - SPT charges exactly `total_minor`.
 - Woo placement re-reads the live cart and must equal `total_minor` (§8.1), else `PriceDriftError`.
-- Lazy expiry (`expireIfDue`) runs at the top of every service entry point. The x402 guard also requires `expires_at > now + 30 s`.
+- Lazy expiry (`expireIfDue`) runs at the top of every service entry point.
 
 ### 6.7 WS4 migration `supabase/migrations/20260926024000_ws4_checkout.sql` (full content; B15)
 
@@ -984,10 +901,10 @@ grant execute on function public.checkout_acquire_payment_lock(uuid, text, int) 
 grant execute on function public.checkout_release_payment_lock(uuid) to service_role;
 ```
 
-`src/lib/checkout/repo.ts` contains only these two wrappers:
+`src/features/checkout/storage/file-repository.ts` contains only these two wrappers:
 ```ts
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/infrastructure/supabase/admin";
 export async function acquirePaymentLock(id: string, rail: PaymentRailId, seconds = 120): Promise<boolean> {
   const { data, error } = await createAdminClient().rpc("checkout_acquire_payment_lock", { p_id: id, p_rail: rail, p_seconds: seconds });
   if (error) throw toAppError(error);
@@ -1014,9 +931,7 @@ WS4 reads and writes the contract `CheckoutRecord` through WS1's helpers.
 type WsPaymentRecord = CheckoutPaymentRecord & {
   lock?: { rail: PaymentRailId; until: string };   // written only by the RPC
   mode?: "spt" | "fallback";                        // stripe
-  network?: string;                                 // x402
   idempotency_key?: string;                         // complete
-  simulated_refund?: boolean;                       // x402 refund recorded, not executed
 };
 ```
 
@@ -1026,10 +941,9 @@ Status usage:
 |---|---|
 | `none` | Default |
 | `authorized` | SPT authorized |
-| `settled` | x402 settled |
 | `captured` | SPT captured |
 | `voided` | SPT canceled |
-| `refunded` | SPT refunded, or x402 with `simulated_refund: true` |
+| `refunded` | Stripe payment refunded |
 | `failed` | Capture failed |
 
 ### 7.2 Resolving lines
@@ -1061,13 +975,10 @@ Status usage:
 `paymentHandlers(row)` (only in `awaiting_payment`, only for `woo_store_api` or stretch `browser` on allowlisted stores):
 - stripe_spt, if `STRIPE_SECRET_KEY` is `sk_test_…` and `total_minor >= 50`:
   `{ id: "app.shoperzero.stripe_spt", rail: "stripe_spt", config: { accepted: ["card"], test_mode: true } }`
-- x402, if `X402_PAY_TO` is set and the currency is `USD`:
-  `{ id: "app.shoperzero.x402", rail: "x402", config: { pay_url: `${appUrl()}/api/v1/checkouts/${row.id}/pay/x402`, network: "eip155:84532", asset: "USDC", amount: usdPrice(row.total_minor!) } }`
-- If the currency isn't USD, add the message `unsupported_currency` ("x402 accepts USD checkouts only").
 
 `alwaysMessages(row)` always adds:
 - `{type:"info", code:"timeline_url", content:"Watch live: {APP_URL}/checkouts/{id}"}` (WS5 CCR-6);
-- `{type:"info", code:"test_mode", content:"Test mode: Stripe test cards and Base Sepolia USDC only; no real money moves."}`.
+- `{type:"info", code:"test_mode", content:"Test mode: Stripe test cards only; no real money moves."}`.
 
 Message codes. Use the contract `MESSAGE_CODES` wherever one fits, and extra `string` codes only where the contract has none:
 
@@ -1083,8 +994,6 @@ Message codes. Use the contract `MESSAGE_CODES` wherever one fits, and extra `st
 | Card declined | `payment_declined` | error | yes |
 | Placement failed + void/refund | `order_failed_refunded` | error | yes |
 | Quote expired | `quote_expired` | error | yes |
-| Non-USD x402 | `unsupported_currency` | info | yes |
-| x402 not paid yet | `payment_required` | error | extra |
 | Lock held | `payment_in_progress` | info | extra |
 | Merchant down at quote | `merchant_unavailable` | error | extra |
 | Placement result unknown | `order_reconciling` | warning | extra |
@@ -1177,7 +1086,7 @@ async function woo<T>(base: string, st: { cart_token?: string; nonce?: string },
 
 Validate the fields we use with a local zod schema: `WooCartSchema` (`items[]`, `shipping_rates[]`, `totals`, `needs_shipping`, `errors[]`), using `.catch()` generously (00 §4.9). During quote, `WooError` with status ≥ 500 or `timeout`/`network` maps to `AppError("upstream_error" | "upstream_timeout")`. 4xx codes map to messages (below).
 
-**Money:** Store API prices are strings in minor units with `currency_minor_unit`. Convert with `toMinor(v, wooMinor, currency) = Math.round(Number(v) * 10 ** (isoDigits(currency) - wooMinor))`, using `src/lib/money.ts` helpers if WS1 provides an equivalent.
+**Money:** Store API prices are strings in minor units with `currency_minor_unit`. Convert with `toMinor(v, wooMinor, currency) = Math.round(Number(v) * 10 ** (isoDigits(currency) - wooMinor))`, using `src/shared/money.ts` helpers if WS1 provides an equivalent.
 
 **Address mapping** (`Address`/`Buyer` → Store API):
 ```ts
@@ -1288,7 +1197,6 @@ function wooAddress(a: Address, b?: Buyer, billing = false) {
      "payment_result": { "payment_status": "success", "payment_details": [], "redirect_url": "https://shop…/checkout/order-received/146/?key=wc_order_AbC…" }
    }
    ```
-   - For x402 the note reads `rail=x402 | ref=0x… | payer=0x… | status=settled on-chain`.
    - Only `payment_result.payment_status === "success"` counts as success. Anything else, or a 4xx/5xx, throws `WooError`.
    - Timeout or network error → `WooError("placement_unknown", …, 504)`. The service annotates, keeps the money and doesn't void.
 4. Return:
@@ -1342,7 +1250,7 @@ Failures are logged only.
 
 **Hard rules:**
 1. Never type card data.
-2. Never click a pay or place-order control unless the store is allowlisted, the payment is `authorized`/`settled`, and an offline method (`bacs`, `cheque`, `cod`, "bank transfer", "pay on delivery") is selected.
+2. Never click a pay or place-order control unless the store is allowlisted, the payment is `authorized`, and an offline method (`bacs`, `cheque`, `cod`, "bank transfer", "pay on delivery") is selected.
 3. Stop on CAPTCHA, login walls and 3DS.
 4. Obey `robots`/opt-out: `store.opted_out` → never.
 
@@ -1394,7 +1302,7 @@ A CAPTCHA at submit → `placing_order → refunding → failed` (void), never `
 
 ## 9. Payment rails
 
-### 9.1 `stripe_spt` (`src/lib/payments/stripe.ts`)
+### 9.1 `stripe_spt` (`src/features/checkout/payments/stripe.ts`)
 
 This rail uses `fetch` for every call, so there is one code path, preview params are untyped anyway, and there are no SDK version surprises. The `stripe` package is installed but not required.
 
@@ -1498,169 +1406,12 @@ The receipt's `mode` (`spt`/`fallback`) is stored in `payment.mode`. When it is 
 
 Minimum charge: Stripe rejects card charges under $0.50 (USD 50). The handoff never charges. For Woo checkouts, amounts under 50 skip the stripe_spt handler, since `paymentHandlers()` (§7.3) omits it. Stripe 5xx or network errors are rethrown and mapped by `toAppError` to `upstream_error`.
 
-### 9.2 `x402` (`src/lib/payments/x402.ts` + the pay route)
-
-Design:
-- **v2 headers:**
-  - `PAYMENT-REQUIRED`: base64 JSON on the 402;
-  - `PAYMENT-SIGNATURE`: sent by the client on the retry;
-  - `PAYMENT-RESPONSE`: the base64 settlement receipt on success.
-- Scheme `exact` on `eip155:84532`, USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e` (the SDK fills `asset` and `amount` from a `"$x.yy"` price), facilitator `https://x402.org/facilitator`.
-- **Dynamic price:** an async `price()` reads `checkouts.total_minor`.
-- **`paymentFlow: "upfront"`:** the facilitator settles on-chain **before** our handler, so the handler only places orders for money that has arrived.
-- `withX402FromHTTPServer` is used (not the `withX402` shorthand) so we can register `onProtectedRequest` on the `x402HTTPResourceServer`. That hook runs before pricing, and an abort returns **403** `{error: reason}`.
-
-```ts
-import "server-only";
-import { x402ResourceServer, x402HTTPResourceServer } from "@x402/next";
-import { HTTPFacilitatorClient } from "@x402/core/server";
-import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { getX402PayableCheckout, recordX402Settlement } from "@/lib/checkout/service";
-import { acquirePaymentLock, releasePaymentLock } from "@/lib/checkout/repo";
-
-export const X402_PAY_ROUTE = "/api/v1/checkouts/[id]/pay/x402";
-// Env is read lazily inside getX402HttpServer() (00 §4.7): never at module top level.
-const x402Network = () => (optionalEnv("X402_NETWORK") ?? "eip155:84532") as `${string}:${string}`;
-const x402Flow = (): "upfront" | "authorization" => (optionalEnv("X402_FLOW") === "authorization" ? "authorization" : "upfront");
-
-export function checkoutIdFromPath(path: string): string | null {
-  const m = /^\/api\/v1\/checkouts\/([0-9a-f-]{36})\/pay\/x402\/?$/i.exec(path);
-  return m ? m[1].toLowerCase() : null;
-}
-export const usdPrice = (minor: number) => `$${(minor / 100).toFixed(2)}` as const;
-
-// Same-process fallback if the DB write in onAfterSettle fails: keyed by EIP-3009 nonce.
-export const settledByNonce = new Map<string, { transaction: string; payer: string | null; network: string; amount_atomic: string | null }>();
-
-let httpServer: x402HTTPResourceServer | null = null;
-export function getX402HttpServer(): x402HTTPResourceServer {
-  if (httpServer) return httpServer;
-  const X402_NETWORK = x402Network(); const FLOW = x402Flow();
-  if (X402_NETWORK !== "eip155:84532") throw new AppError("not_implemented", "x402: Base Sepolia only");
-  const payTo = optionalEnv("X402_PAY_TO");
-  if (!payTo) throw new Error("x402: X402_PAY_TO missing");
-
-  const facilitator = new HTTPFacilitatorClient({ url: optionalEnv("X402_FACILITATOR_URL") ?? "https://x402.org/facilitator" });
-  const server = new x402ResourceServer(facilitator).register(X402_NETWORK, new ExactEvmScheme());
-
-  server.onAfterSettle(async (ctx) => {
-    if (!ctx.result.success) return;
-    const path = (ctx.transportContext as { request?: { path?: string } } | undefined)?.request?.path ?? "";
-    const id = checkoutIdFromPath(path);
-    const s = { transaction: ctx.result.transaction, payer: ctx.result.payer ?? null, network: ctx.result.network, amount_atomic: ctx.requirements.amount ?? null };
-    const nonce = (ctx.paymentPayload.payload as { authorization?: { nonce?: string } })?.authorization?.nonce;
-    if (nonce) settledByNonce.set(nonce, s);
-    if (id) await recordX402Settlement(id, s).catch((e) => console.error("[x402] recordX402Settlement failed", id, s.transaction, e));
-  });
-  server.onSettleFailure(async (ctx) => {
-    const id = checkoutIdFromPath((ctx.transportContext as { request?: { path?: string } } | undefined)?.request?.path ?? "");
-    if (id) await releasePaymentLock(id).catch(() => {});
-  });
-
-  httpServer = new x402HTTPResourceServer(server, {
-    [X402_PAY_ROUTE]: {
-      accepts: {
-        scheme: "exact",
-        network: X402_NETWORK,
-        payTo,
-        maxTimeoutSeconds: 300,
-        ...(FLOW === "upfront" ? { extra: { paymentFlow: "upfront" } } : {}),
-        price: async (ctx) => {
-          const p = await getX402PayableCheckout(checkoutIdFromPath(ctx.path) ?? "");
-          if ("reason" in p) throw new Error(p.reason);            // guard below normally prevents reaching this (throw => 500)
-          return usdPrice(p.total_minor);
-        },
-      },
-      description: "ShoperZero agent checkout payment (USDC, Base Sepolia)",
-      mimeType: "application/json",
-      unpaidResponseBody: async (ctx) => ({
-        contentType: "application/json",
-        body: { checkout_id: checkoutIdFromPath(ctx.path), hint: "Pay with x402 v2 (exact, USDC on eip155:84532) and retry with PAYMENT-SIGNATURE." },
-      }),
-    },
-  }).onProtectedRequest(async (ctx) => {
-    const id = checkoutIdFromPath(ctx.path);
-    if (!id) return { abort: true, reason: "checkout_not_found" };
-    const p = await getX402PayableCheckout(id);   // not found / wrong state / expiring (<30 s) / non-USD / total<=0 / locked
-    if ("reason" in p) return { abort: true, reason: p.reason };
-    if (ctx.paymentHeader) {                        // paid retry: take the payment lock before verify/settle
-      const ok = await acquirePaymentLock(id, "x402", 120);
-      if (!ok) return { abort: true, reason: "payment_in_progress" };
-    }
-  });
-  return httpServer;
-}
-```
-
-**Upfront flow and the handler.** `withX402FromHTTPServer` calls `handler(request)` only after `processHTTPRequest` has verified the payment and, in upfront mode, settled it (`beforeHandlerSettlement`). By then `onAfterSettle` has already run `recordX402Settlement` (CAS `awaiting_payment → payment_authorized`).
-
-**Default-flow fallback (`X402_FLOW=authorization`)**, used only if M7 shows upfront failing on the free facilitator:
-- the handler must **not** place the order;
-- it returns 200 with the session in `complete_in_progress`;
-- `withX402` then settles;
-- `onAfterSettle` records the settlement and calls `after(() => finalizeX402Checkout(id))`;
-- `onSettleFailure` releases the lock;
-- the agent polls `get_checkout`.
-
-**Pay route** `src/app/api/v1/checkouts/[id]/pay/x402/route.ts`:
-```ts
-import { NextRequest, NextResponse } from "next/server";
-import { withX402FromHTTPServer } from "@x402/next";
-import { getX402HttpServer, checkoutIdFromPath, settledByNonce } from "@/lib/payments/x402";
-import { finalizeX402Checkout, getCheckout } from "@/lib/checkout/service";
-import { CORS_HEADERS, preflight } from "@/lib/http";
-import { optionalEnv } from "@/lib/env";
-
-const X402_EXPOSE = { "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE, Request-Id",
-  "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key, UCP-Agent, PAYMENT-SIGNATURE, X-PAYMENT, Authorization, Request-Id" };
-function withCors(res: Response): Response { for (const [k, v] of Object.entries({ ...CORS_HEADERS, ...X402_EXPOSE })) res.headers.set(k, v); return res; }
-
-export const maxDuration = 60;
-
-function nonceFromHeader(h: string | null): string | null {
-  if (!h) return null;
-  try { return JSON.parse(Buffer.from(h, "base64").toString("utf8"))?.payload?.authorization?.nonce ?? null; } catch { return null; }
-}
-
-// Runs ONLY after verified + settled (upfront). Must return < 400: money has moved.
-async function handler(req: NextRequest): Promise<NextResponse> {
-  const id = checkoutIdFromPath(req.nextUrl.pathname)!;
-  if (optionalEnv("X402_FLOW") === "authorization") {
-    return NextResponse.json(await getCheckout(id), { status: 202 });
-  }
-  const fallback = settledByNonce.get(nonceFromHeader(req.headers.get("payment-signature")) ?? "") ?? null;
-  const session = await finalizeX402Checkout(id, fallback);   // places the Woo order, completes; on failure -> refunding -> failed (refund recorded)
-  return NextResponse.json(session, { status: 200 });
-}
-
-let paid: ((r: NextRequest) => Promise<NextResponse>) | null = null;   // lazy: env is read at request time, not at build
-export async function POST(req: NextRequest) {
-  paid ??= withX402FromHTTPServer(handler, getX402HttpServer());
-  return withCors(await paid(req));
-}
-export function OPTIONS() { return withCors(preflight()); }
-```
-
-- `withCors` layers WS1's `CORS_HEADERS` with `Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE` and the x402 request headers. This route is not wrapped in `route()`, because `withX402` owns the response. Its 403/402 bodies are the SDK's (§11.6).
-- **Route key.** `X402_PAY_ROUTE` must equal the served path pattern exactly (no `basePath`, no trailing slash). If it doesn't match, the handler runs **without payment**, and the SDK only logs `[x402] Request path … did not match`. Test M7-2 guards this.
-
-**x402Rail (the `PaymentRail`, used by `complete_checkout` with an `x402_receipt`):**
-- `authorize(checkout, instrument)`:
-  - Requires `credential.type === "x402_receipt"`.
-  - Loads the row. If `payment.rail === "x402"` and `payment.reference.toLowerCase() === tx_hash.toLowerCase()` → return `{ rail:"x402", reference: tx_hash, amount, payer: payment.payer, captured: true }`.
-  - Otherwise throws `PaymentNotFoundError`. The service turns that into message `payment_required`: "Pay first at payment.handlers[x402].config.pay_url".
-- `capture(receipt)` → `{ ...receipt, captured: true }` (already settled).
-- `voidOrRefund(receipt)` → no on-chain action. The service records the event `refunding → failed` with `data.simulated: true`, and sets `payment.status = "refunded"` with `simulated_refund: true`, and `orders.status = "refunded"`.
-  - **Stretch:** a real refund with viem `writeContract(USDC.transfer(payer, amount))` from the pay-to key. It needs Base Sepolia ETH for gas.
-
----
-
 ## 10. Service orchestration (`service.ts`)
 
 Imports:
-- `@/lib/contracts`: types, `CreateCheckoutInputSchema`, `UpdateCheckoutInputSchema`, `CompleteCheckoutInputSchema`, `QUOTE_TTL_SECONDS`;
-- `@/lib/db`: the helpers in §1.4;
-- `@/lib/errors`: `AppError`;
+- `@/contracts`: types, `CreateCheckoutInputSchema`, `UpdateCheckoutInputSchema`, `CompleteCheckoutInputSchema`, `QUOTE_TTL_SECONDS`;
+- `@/infrastructure/database`: the helpers in §1.4;
+- `@/shared/errors`: `AppError`;
 - the local `state.ts`, `session.ts`, `repo.ts`, `connectors`, `payments`.
 
 ```ts
@@ -1789,19 +1540,12 @@ export async function completeCheckout(id: string, input: CompleteCheckoutInput,
   if (row.state === "expired") throw new AppError("gone", "Checkout expired; create a new one");
   const inst = data.payment.instruments[0];
   const railId = railForHandler(inst.handler_id);
-  if (row.state === "payment_authorized") {                                  // x402 settled, finalization interrupted: resume
-    if (railId !== "x402") throw new AppError("invalid_state", "payment already authorized with another rail", { state: row.state });
-    return finalizeX402Checkout(id);
-  }
+  if (row.state === "payment_authorized") return withMessage(await getCheckout(id), info("payment_in_progress"));
   if (row.state !== "awaiting_payment") throw new AppError("invalid_state", `cannot complete a ${row.state} checkout`, { state: row.state, allowed: ["awaiting_payment"] });
   if (!railId || !paymentHandlers(row).some((h) => h.id === inst.handler_id))
     throw new AppError("unprocessable", `handler ${inst.handler_id} is not offered for this checkout`);
   if (idem && (row.payment as WsPaymentRecord).idempotency_key === idem) return getCheckout(id);
 
-  if (railId === "x402") {
-    return withMessage(await getCheckout(id), { type: "error", code: "payment_required",
-      content: "No settled x402 payment for this checkout yet. POST to payment.handlers[app.shoperzero.x402].config.pay_url with an x402 client; that call places the order. Then read get_checkout." });
-  }
 
   // stripe_spt
   if (!(await acquirePaymentLock(id, "stripe_spt", 120))) return withMessage(await getCheckout(id), info("payment_in_progress"));
@@ -1844,14 +1588,12 @@ async function finalize(id: string, receipt: PaymentReceipt): Promise<CheckoutSe
           messages: [{ type: "warning", code: "order_reconciling", content: "The merchant's response was lost; the order is being reconciled manually. You will not be charged twice." }] }), store);
     await transition(id, "placing_order", "refunding", { message: `Order placement failed: ${code}`, data: { error_code: code } }, { error: { code, message: String((e as Error).message) } });
     await rail.voidOrRefund(receipt);
-    const x402 = receipt.rail === "x402";
     await insertOrder(orderFrom(row, receipt, { status: "refunded", merchant_order_id: null, merchant_order_url: null })).catch(() => {});
     return toSession(await transition(id, "refunding", "failed",
-      x402 ? { message: `Refund of ${fmtMoney(receipt.amount)} USDC to payer recorded`, data: { rail: "x402", tx_hash: receipt.reference, simulated: true } }
-           : { message: "Authorization voided", data: { rail: "stripe_spt", payment_intent_id: receipt.reference } },
-      { payment: { ...row.payment, status: x402 ? "refunded" : "voided", ...(x402 ? { simulated_refund: true } : {}) } as WsPaymentRecord,
+      { message: "Authorization voided", data: { rail: "stripe_spt", payment_intent_id: receipt.reference } },
+      { payment: { ...row.payment, status: "voided" } as WsPaymentRecord,
         messages: [{ type: "error", code: "order_failed_refunded", severity: "unrecoverable",
-          content: `The merchant rejected the order (${code}). ${x402 ? "A refund to the payer was recorded (testnet, simulated)." : "The card authorization was voided; nothing was charged."}` }] }), store);
+          content: `The merchant rejected the order (${code}). The card authorization was voided; nothing was charged.` }] }), store);
   }
   row = await transition(id, "placing_order", "order_placed",
     { message: `Merchant order #${placed.merchant_order_id} placed`, data: { merchant_order_id: placed.merchant_order_id, merchant_order_url: placed.merchant_order_url ?? undefined } },
@@ -1867,52 +1609,17 @@ async function finalize(id: string, receipt: PaymentReceipt): Promise<CheckoutSe
   }
   await updateOrderStatus(order.id, "confirmed");
   const done = await transition(id, "order_placed", "completed",
-    receipt.rail === "stripe_spt"
-      ? { message: "Payment captured", data: { rail: "stripe_spt", payment_intent_id: captured.reference, amount: captured.amount } }
-      : { message: "Complete: payment already settled on-chain", data: { rail: "x402", tx_hash: captured.reference, network: "eip155:84532" } },
-    { payment: { ...row.payment, status: receipt.rail === "stripe_spt" ? "captured" : "settled", captured: true } });
+    { message: "Payment captured", data: { rail: "stripe_spt", payment_intent_id: captured.reference, amount: captured.amount } },
+    { payment: { ...row.payment, status: "captured", captured: true } });
   after(() => markWooOrderPaid(store, placed.merchant_order_id, captured, id).catch(() => {}));   // optional M3+
   return toSession(done, store, await getOrderByCheckoutId(id));
-}
-```
-
-x402 helpers:
-
-```ts
-export async function recordX402Settlement(checkoutId: string, s: X402Settlement) {
-  const row = await mustLoad(checkoutId);
-  if (row.state !== "awaiting_payment") return;                                // already recorded, or not payable
-  const amount = { amount: row.total_minor!, currency: "USD" };
-  await transition(checkoutId, "awaiting_payment", "payment_authorized",
-    { message: `Paid ${fmtMoney(amount)} in USDC on Base Sepolia`, data: { rail: "x402", tx_hash: s.transaction, network: "eip155:84532", amount } },
-    { payment: { rail: "x402", status: "settled", reference: s.transaction, payer: s.payer ?? undefined, amount, captured: true, network: s.network } as WsPaymentRecord });
-}
-
-export async function finalizeX402Checkout(checkoutId: string, fallback: X402Settlement | null = null) {
-  let row = await mustLoad(checkoutId);
-  if (row.state === "awaiting_payment" && fallback) { await recordX402Settlement(checkoutId, fallback); row = await mustLoad(checkoutId); }
-  if (row.state !== "payment_authorized" || row.payment.rail !== "x402") return getCheckout(checkoutId);
-  return finalize(checkoutId, { rail: "x402", reference: row.payment.reference!, amount: { amount: row.total_minor!, currency: "USD" }, payer: row.payment.payer, captured: true });
-}
-
-export async function getX402PayableCheckout(id: string) {
-  const row0 = await getCheckoutRecord(id);
-  if (!row0) return { reason: "checkout_not_found" };
-  const r = await expireIfDue(row0);
-  if (r.state === "handoff") return { reason: "checkout_requires_escalation" };
-  if (r.state !== "awaiting_payment") return { reason: `checkout_not_payable:${r.state}` };
-  if ((r.currency ?? "").toUpperCase() !== "USD") return { reason: "currency_not_supported" };
-  if (!r.total_minor || r.total_minor <= 0) return { reason: "total_invalid" };
-  if (!r.expires_at || new Date(r.expires_at).getTime() < Date.now() + 30_000) return { reason: "quote_expiring_requote" };
-  if (lockActive(r)) return { reason: "payment_in_progress" };
-  return { total_minor: r.total_minor, currency: "USD" as const };
 }
 ```
 
 `orderFrom(row, receipt, extra)` returns:
 ```ts
 { checkout_id: row.id, store_id: row.store_id, status, merchant_order_id, merchant_order_url,
-  payment: { rail: receipt.rail, reference: receipt.reference, amount: receipt.amount, payer: receipt.payer } }
+  payment: { rail: receipt.rail, reference: receipt.reference, amount: receipt.amount } }
 ```
 This is the contract `Omit<Order, "id" | "created_at">`. WS1's `insertOrder` maps it to the `orders` columns.
 
@@ -1979,12 +1686,11 @@ Responses:
   "totals": [{ "type": "subtotal", "amount": 4400 }, { "type": "shipping", "amount": 500 }, { "type": "tax", "amount": 0 }, { "type": "total", "amount": 4900 }],
   "currency": "USD",
   "payment": { "handlers": [
-    { "id": "app.shoperzero.stripe_spt", "rail": "stripe_spt", "config": { "accepted": ["card"], "test_mode": true } },
-    { "id": "app.shoperzero.x402", "rail": "x402", "config": { "pay_url": "https://app.example/api/v1/checkouts/5b0e…/pay/x402", "network": "eip155:84532", "asset": "USDC", "amount": "$49.00" } }
+    { "id": "app.shoperzero.stripe_spt", "rail": "stripe_spt", "config": { "accepted": ["card"], "test_mode": true } }
   ] },
   "messages": [
     { "type": "info", "code": "timeline_url", "content": "Watch live: https://app.example/checkouts/5b0e…" },
-    { "type": "info", "code": "test_mode", "content": "Test mode: Stripe test cards and Base Sepolia USDC only; no real money moves." }
+    { "type": "info", "code": "test_mode", "content": "Test mode: Stripe test cards only; no real money moves." }
   ],
   "links": [{ "type": "timeline", "url": "https://app.example/checkouts/5b0e…" }],
   "expires_at": "2026-09-26T18:10:00.000Z",
@@ -2011,10 +1717,6 @@ Request (`CompleteCheckoutInput`):
 { "payment": { "instruments": [{ "handler_id": "app.shoperzero.stripe_spt", "type": "card", "credential": { "type": "spt", "token": "spt_1Q…" } }] },
   "idempotency_key": "b3f2…" }
 ```
-or
-```json
-{ "payment": { "instruments": [{ "handler_id": "app.shoperzero.x402", "type": "x402", "credential": { "type": "x402_receipt", "tx_hash": "0x9c…" } }] } }
-```
 
 Responses:
 - 200 `CheckoutSession`:
@@ -2025,43 +1727,18 @@ Responses:
                "payment": { "rail": "stripe_spt", "reference": "pi_3Q…", "amount": { "amount": 4900, "currency": "USD" } },
                "created_at": "…" }
     ```
-  - Business failures are still 200 with messages: `payment_declined` (state `awaiting_payment`), `merchant_checkout_required`, `payment_requires_action`, `payment_required` (x402 not paid), `order_failed_refunded` (state `failed`).
+  - Business failures are still 200 with messages: `payment_declined` (state `awaiting_payment`), `merchant_checkout_required`, `payment_requires_action`, `order_failed_refunded` (state `failed`).
 - 409 `invalid_state`; 410 `gone`; 422 `unprocessable` (handler not offered); 404; 502 `upstream_error` (Stripe 5xx).
 
 ### 11.5 `POST /api/v1/checkouts/{id}/cancel`
 - 200 `CheckoutSession` (`state:"canceled"`); 409 `invalid_state`; 404.
-
-### 11.6 `POST /api/v1/checkouts/{id}/pay/x402`: x402-protected (B6)
-
-Unpaid request (no `PAYMENT-SIGNATURE`) → **402**:
-```
-HTTP/1.1 402 Payment Required
-PAYMENT-REQUIRED: eyJ4NDAyVmVyc2lvbiI6Mi…          (base64 JSON)
-Content-Type: application/json
-
-{"checkout_id":"5b0e…","hint":"Pay with x402 v2 (exact, USDC on eip155:84532) and retry with PAYMENT-SIGNATURE."}
-```
-Decoded `PAYMENT-REQUIRED`:
-```json
-{ "x402Version": 2, "error": "Payment required",
-  "resource": { "url": "https://app.example/api/v1/checkouts/5b0e…/pay/x402", "description": "ShoperZero agent checkout payment (USDC, Base Sepolia)", "mimeType": "application/json" },
-  "accepts": [{ "scheme": "exact", "network": "eip155:84532", "amount": "49000000",
-                "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e", "payTo": "0xYourPayTo", "maxTimeoutSeconds": 300,
-                "extra": { "name": "USDC", "version": "2", "paymentFlow": "upfront" } }] }
-```
-
-- Paid retry (valid `PAYMENT-SIGNATURE`, settled) → **200**. Body: `CheckoutSession` (`completed` + `order`, or `failed` + `order_failed_refunded`). Header `PAYMENT-RESPONSE` carries the base64 `{success, transaction, network, payer}`.
-- Not payable → **403** `{"error":"checkout_not_payable:quoting" | "quote_expiring_requote" | "payment_in_progress" | "checkout_requires_escalation" | "checkout_not_found" | "currency_not_supported"}`.
-  - This body is produced by the x402 SDK's `onProtectedRequest` abort, not by our envelope. It is the one documented exception to B11, because `withX402` owns the response.
-- Invalid or insufficient payment → **402** with the reason in `PAYMENT-REQUIRED.error`.
-- Facilitator down → 5xx from the SDK.
 
 ### 11.7 `GET /api/v1/orders/{id}`
 - 200 `Order`; 404.
 
 ---
 
-## 12. MCP checkout tools (`src/lib/checkout/mcp-tools.ts`, re-exported at `src/lib/mcp/checkout-tools.ts`)
+## 12. MCP checkout tools (`src/features/checkout/mcp-tools.ts`, re-exported at `src/infrastructure/mcp/checkout-tools.ts`)
 
 WS3's `/api/mcp` composes `registerCheckoutTools(server)` (B4). It may first wrap the server with its `instrumentServer()` for logging and rate limits. The registrar registers **six** tools, including `get_order`. WS3 must not register any of them.
 
@@ -2072,9 +1749,9 @@ WS3's `/api/mcp` composes `registerCheckoutTools(server)` (B4). It may first wra
 `create_checkout` and `update_checkout` also accept **Shopify/UCP-style line items** `{ item: { id }, quantity }`, alongside the contract form `{ variant_id, quantity }`. Prompts written for Shopify's UCP MCP then work unchanged. `id` may carry a `sz:variant:` prefix. The registrar owns the extended schemas and normalizes before calling the service, so the service and REST keep the contract shape:
 
 ```ts
-// src/lib/checkout/mcp-tools.ts
+// src/features/checkout/mcp-tools.ts
 import { z } from "zod";
-import { CreateCheckoutInputSchema, UpdateCheckoutInputSchema, CreateCheckoutToolInputSchema, UpdateCheckoutToolInputSchema, LineItemInputSchema } from "@/lib/contracts";
+import { CreateCheckoutInputSchema, UpdateCheckoutInputSchema, CreateCheckoutToolInputSchema, UpdateCheckoutToolInputSchema, LineItemInputSchema } from "@/contracts";
 
 const ShopifyLineItemSchema = z.object({
   item: z.object({ id: z.string().trim().min(1).max(100).describe("Variant id (uuid), optionally prefixed 'sz:variant:'") }),
@@ -2117,7 +1794,7 @@ Update does the same when `line_items` is present. `structuredContent` is unchan
 | `cancel_checkout` | `CancelCheckoutToolInputSchema` | `CheckoutSession` | `readOnlyHint:false, idempotentHint:true` |
 | `get_order` | `GetOrderToolInputSchema` | `Order` | `readOnlyHint:true` |
 
-- Results use `toolResult(structured, summary)` and `toolError(err, tool)` from `src/lib/mcp/result.ts` (00 §6.9). The text is the one-line summary plus compact JSON; errors use the same `{error:{code,message,details?}}` envelope.
+- Results use `toolResult(structured, summary)` and `toolError(err, tool)` from `src/infrastructure/mcp/result.ts` (00 §6.9). The text is the one-line summary plus compact JSON; errors use the same `{error:{code,message,details?}}` envelope.
 - Never throw out of a handler.
 - **No usage logging in the registrar.** WS3's `instrumentServer(server)` wraps every registrar in `/api/mcp` and is the only place tool calls are written to `agent_requests`. `registerCheckoutTools` must not call `logAgentRequest`. Checkout state changes are still written to `checkout_events` by the service, as before.
 - **Checkout tools never return `not_implemented`.** Before the Woo path or the service is ready, `create_checkout` returns a persisted handoff session (`state: "handoff"`, `status: "requires_escalation"`, `continue_url`). See §10, last paragraph. If the service itself is still stubbed, the registrar builds that session from `handoffConnector` without persisting it. `get_checkout`/`update_checkout`/`complete_checkout`/`cancel_checkout` on an unknown id return `not_found`. `complete_checkout` on a handoff session returns it with `merchant_checkout_required`.
@@ -2127,7 +1804,7 @@ Update does the same when `line_items` is present. `structuredContent` is unchan
 Descriptions (verbatim; they steer the model):
 - **`create_checkout`:** "Start a checkout for variants from ONE store (use variant ids from search_catalog/get_product). Prices are integer minor units (cents). Include buyer.email and fulfillment.address to get a payable quote in one call. Returns status ready_for_complete with totals and payment.handlers; or requires_escalation with continue_url when the store has no agent checkout (give that link to the user; do not try to pay)."
 - **`update_checkout`:** "Change buyer, address, line_items or the shipping option (selected_shipping_option_id from fulfillment.options). Re-quotes live from the store. Not allowed once payment has started."
-- **`complete_checkout`:** "Pay and place the order. Card: first get a Shared Payment Token for exactly the checkout total (e.g. demo wallet tool wallet_issue_spt with amount=total in cents, currency, checkout_id), then call with {handler_id:'app.shoperzero.stripe_spt', type:'card', credential:{type:'spt', token}}. USDC: pay payment.handlers[app.shoperzero.x402].config.pay_url with an x402 client (e.g. wallet_pay_x402); that call already places the order, then call get_checkout to confirm (complete_checkout with credential {type:'x402_receipt', tx_hash} also works). Never call this for requires_escalation checkouts."
+- **`complete_checkout`:** "Pay and place the order. Card: first get a Shared Payment Token for exactly the checkout total (e.g. demo wallet tool wallet_issue_spt with amount=total in cents, currency, checkout_id), then call with {handler_id:'app.shoperzero.stripe_spt', type:'card', credential:{type:'spt', token}}. Never call this for requires_escalation checkouts."
 - **`get_checkout`:** "Read a checkout's current status, totals and order."
 - **`cancel_checkout`:** "Cancel a checkout that has not been paid."
 - **`get_order`:** "Read an order created by complete_checkout."
@@ -2136,7 +1813,7 @@ Summary line (`summarize(s)` in `session.ts`); always end with ` Watch live: {ti
 
 | Status | Text |
 |---|---|
-| `ready_for_complete` | `Checkout {id} ready_for_complete: total {money} (subtotal {a}, shipping {b} {option}). Pay with app.shoperzero.stripe_spt{ or app.shoperzero.x402 at {pay_url}}. Held until {expires_at}.` |
+| `ready_for_complete` | `Checkout {id} ready_for_complete: total {money} (subtotal {a}, shipping {b} {option}). Pay with app.shoperzero.stripe_spt. Held until {expires_at}.` |
 | `incomplete` | `Checkout {id} incomplete: {error message contents joined}.` |
 | `requires_escalation` | `Checkout {id} requires_escalation: {domain} has no agent checkout. Give the user this link to finish on the merchant site: {continue_url}` |
 | `completed` | `Order placed on {domain}: merchant order #{merchant_order_id}. Paid {money} via {rail} ({reference}).` |
@@ -2166,13 +1843,13 @@ Agent contract:
 
 ```ts
 import "server-only";
-import type { McpServer } from "@/lib/mcp/types";
-import { toolResult, toolError } from "@/lib/mcp/result";
+import type { McpServer } from "@/infrastructure/mcp/types";
+import { toolResult, toolError } from "@/infrastructure/mcp/result";
 import {
   CreateCheckoutToolInputSchema, UpdateCheckoutToolInputSchema, GetCheckoutToolInputSchema,
   CompleteCheckoutToolInputSchema, CancelCheckoutToolInputSchema, GetOrderToolInputSchema,
-} from "@/lib/contracts";
-import * as svc from "@/lib/checkout";
+} from "@/contracts";
+import * as svc from "@/features/checkout";
 import { summarize, summarizeOrder } from "./session";
 
 const mcpCtx = (meta?: { "ucp-agent"?: { profile?: string } }, idem?: string) =>
@@ -2209,7 +1886,7 @@ export function registerCheckoutTools(server: McpServer): void {
 ```ts
 import { createMcpHandler } from "mcp-handler";
 import { registerDemoWalletTools } from "@/lib/demo-wallet/tools";
-import { flags, optionalEnv } from "@/lib/env";
+import { flags, optionalEnv } from "@/shared/env";
 
 export const maxDuration = 60;
 const handler = createMcpHandler((server) => registerDemoWalletTools(server), {
@@ -2217,9 +1894,8 @@ const handler = createMcpHandler((server) => registerDemoWalletTools(server), {
 });
 function enabled(req: Request): boolean {
   if (!flags.demoWalletEnabled()) return false;                                    // DEMO_WALLET_ENABLED=true (00)
-  if ((optionalEnv("X402_NETWORK") ?? "eip155:84532") !== "eip155:84532") return false;
   const sk = optionalEnv("STRIPE_SECRET_KEY");
-  if (sk && !sk.startsWith("sk_test_")) return false;
+  if (!sk?.startsWith("sk_test_")) return false;
   const t = optionalEnv("DEMO_WALLET_TOKEN");
   return !t || req.headers.get("authorization") === `Bearer ${t}`;
 }
@@ -2229,73 +1905,16 @@ async function guarded(req: Request) {
 export { guarded as GET, guarded as POST };
 ```
 
-- Each tool re-checks its own rail. `wallet_issue_spt` → `AppError("not_implemented")` without an `sk_test_` key. `wallet_pay_x402` → `not_implemented` without `DEMO_WALLET_PRIVATE_KEY`.
-- Tool descriptions start with "TEST MODE BUYER WALLET (demo)". This stands in for a Link agent wallet or CDP wallet, and it is the buyer side, not ShoperZero.
+- `wallet_issue_spt` requires an `sk_test_` key, otherwise it returns `AppError("not_implemented")`.
+- Tool descriptions start with "TEST MODE BUYER WALLET (demo)". This stands in for a buyer-side test-token provider, and it is the buyer side, not ShoperZero.
 
-### 13.2 Tools (`src/lib/demo-wallet/tools.ts`; schemas from 00 §6.8)
+### 13.2 Tools (`src/features/checkout/demo/wallet/tools.ts`; schemas from 00 §6.8)
 
 | Tool | Input | Output | Behavior |
 |---|---|---|---|
 | `wallet_issue_spt` | `WalletIssueSptInputSchema` `{checkout_id, amount, currency}` | `WalletIssueSptOutput` `{ token, expires_at, test_mode: true }` | `getCheckout(checkout_id)`; refuse unless `amount === total`. `issueTestSpt({ amount, currency })` (§9.1). `expires_at` is ISO |
-| `wallet_pay_x402` | `WalletPayX402InputSchema` `{pay_url}` | `WalletPayX402Output` `{ tx_hash, payer, network, amount, explorer_url, checkout? }` | Require that `pay_url` starts with `${appUrl()}/api/v1/checkouts/` and ends with `/pay/x402`. Pay with `@x402/fetch` (below). `explorer_url = https://sepolia.basescan.org/tx/{tx_hash}`. `amount` from the checkout's x402 handler |
 
-`wallet_pay_x402` core:
-```ts
-import { x402Client, wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
-import { ExactEvmScheme } from "@x402/evm/exact/client";
-import { privateKeyToAccount } from "viem/accounts";
-
-const account = privateKeyToAccount(requireEnv("DEMO_WALLET_PRIVATE_KEY") as `0x${string}`);
-const client = new x402Client();
-client.register("eip155:84532", new ExactEvmScheme(account));
-client.setSpendControls({ maxAmountPerPayment: optionalEnv("DEMO_WALLET_MAX_USD") ?? "$25" });   // default cap is $1: MUST raise
-const pay = wrapFetchWithPayment(fetch, client);
-const res = await pay(pay_url, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-const h = res.headers.get("PAYMENT-RESPONSE");
-const receipt = h ? decodePaymentResponseHeader(h) : null;
-const checkout = (await res.json().catch(() => null)) as CheckoutSession | null;
-if (!receipt?.transaction) throw new AppError("upstream_error", `x402 payment failed (HTTP ${res.status})`, { status: res.status });
-return { tx_hash: receipt.transaction, payer: receipt.payer ?? account.address, network: "eip155:84532",
-         amount: xHandler(checkout)?.config.amount ?? "", explorer_url: `https://sepolia.basescan.org/tx/${receipt.transaction}`,
-         checkout: checkout ?? undefined };
-```
-
-If `ExactEvmScheme` from `@x402/evm/exact/client` doesn't accept a viem `LocalAccount` directly, wrap it with `toClientEvmSigner(account)` from `@x402/evm` (**UNVERIFIED**).
-
-**Connect in Claude Desktop** (`claude_desktop_config.json`):
-```json
-{ "mcpServers": {
-    "shoperzero":             { "command": "npx", "args": ["-y", "mcp-remote", "https://<app>/api/mcp"] },
-    "shoperzero-demo-wallet": { "command": "npx", "args": ["-y", "mcp-remote", "https://<app>/api/demo-wallet/mcp"] } } }
-```
-Claude Code: `claude mcp add --transport http shoperzero-wallet https://<app>/api/demo-wallet/mcp`. Add `--header "Authorization: Bearer $DEMO_WALLET_TOKEN"` if the token is set.
-
-### 13.3 `scripts/agent-x402.ts` (full flow over plain HTTP; the acceptance test for M9)
-
-Run it:
-```bash
-set -a; . ./.env.local; set +a
-npx -y tsx scripts/agent-x402.ts --app http://localhost:3000 --query "sticker" [--variant <uuid>] [--qty 1]
-```
-`tsx` is fetched by npx and is not added to `package.json`. Node 20 has no native TS stripping.
-
-Behavior (exit code 0 means pass; each step prints one line):
-1. **Resolve the variant.**
-   - With `--variant`, use it.
-   - Otherwise `GET {app}/api/v1/search?q={query}&limit=5&format=indexed` (WS3; B7 `?format=indexed` gives raw variants). Pick the first product whose `checkout_methods` includes `woo_store_api` and take `variants[0].id`.
-   - If WS3 isn't ready, require `--variant`.
-2. `POST {app}/api/v1/checkouts` with `buyer {email:"agent-demo@example.com", name:"Ada Lovelace"}` and the SF address, plus `Idempotency-Key: agent-x402-{Date.now()}`.
-   - Assert `status === "ready_for_complete"` and the `app.shoperzero.x402` handler is present.
-3. **Unpaid probe:** `fetch(pay_url, {method:"POST"})`.
-   - **Assert 402**, then decode `PAYMENT-REQUIRED`.
-   - Assert `accepts[0].scheme === "exact"`, `network === "eip155:84532"`, `amount === String(total_minor * 10_000)` and `payTo === X402_PAY_TO` when set.
-4. **Pay:** `wrapFetchWithPayment` (same client as §13.2, cap `$25`) → `POST pay_url`.
-   - Assert 200, decode `PAYMENT-RESPONSE`, and print the tx hash and BaseScan URL.
-5. `GET /api/v1/checkouts/{id}` → assert `completed` and `order.merchant_order_id`.
-6. `GET /api/v1/orders/{order.id}` → assert `payment.rail === "x402"` and that `payment.reference` equals the tx hash.
-7. **Replay:** unpaid POST `pay_url` → assert **403** (`checkout_not_payable:completed`).
-
-### 13.4 `scripts/agent-spt.ts` (same shape for the SPT rail)
+### 13.3 `scripts/agent-spt.ts` (Stripe end-to-end smoke test)
 
 1. Create a checkout for the hoodie (`--query hoodie`) → assert `ready_for_complete`, total 4900.
 2. Get a token with the test helper, or `pm_card_visa` if `STRIPE_SPT_MODE=fallback`.
@@ -2322,7 +1941,7 @@ sequenceDiagram
     Z->>M: GET /cart (Cart-Token) → POST /cart/add-item → POST /cart/update-customer → POST /cart/select-shipping-rate
     M-->>Z: totals (total_price 4900), shipping_rates
     Z->>DB: quoting→awaiting_payment (total_minor=4900, expires_at=+10m) + event
-    Z-->>A: CheckoutSession ready_for_complete, handlers [stripe_spt, x402]
+    Z-->>A: CheckoutSession ready_for_complete, handlers [stripe_spt]
     A->>W: wallet_issue_spt {amount:4900, currency:USD, checkout_id}
     W->>S: POST /v1/test_helpers/shared_payment/granted_tokens (Stripe-Version preview)
     S-->>W: spt_…
@@ -2344,46 +1963,6 @@ sequenceDiagram
     Note over Z,S: placement fails → placing_order→refunding → POST /v1/payment_intents/pi_…/cancel → failed
 ```
 
-### 14.2 x402 rail (upfront)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Agent
-    participant W as Demo wallet MCP (@x402/fetch)
-    participant P as /api/v1/checkouts/{id}/pay/x402 (withX402FromHTTPServer)
-    participant F as x402.org facilitator
-    participant C as Base Sepolia (USDC)
-    participant DB as Supabase
-    participant M as Woo demo store
-
-    Note over A: checkout already ready_for_complete (total_minor=800)
-    A->>W: wallet_pay_x402 {pay_url}
-    W->>P: POST pay_url (no payment)
-    P->>DB: onProtectedRequest guard: awaiting_payment, USD, not expiring, not locked
-    P->>DB: price() → total_minor 800 → "$8.00"
-    P-->>W: 402 PAYMENT-REQUIRED {exact, eip155:84532, amount 8000000, payTo, extra.paymentFlow: upfront}
-    W->>W: sign EIP-3009 transferWithAuthorization (cap $25)
-    W->>P: POST pay_url + PAYMENT-SIGNATURE
-    P->>DB: guard + rpc checkout_acquire_payment_lock(x402)
-    P->>F: /verify
-    F-->>P: isValid
-    P->>F: /settle (before handler: upfront)
-    F->>C: transferWithAuthorization
-    C-->>F: tx 0x…
-    F-->>P: {success, transaction, payer}
-    P->>DB: onAfterSettle → recordX402Settlement: awaiting_payment→payment_authorized + event {tx_hash}
-    P->>M: handler → finalizeX402Checkout: GET /cart drift check → POST /checkout (bacs, note: tx hash, payer)
-    M-->>P: {order_id:147}
-    P->>DB: placing_order→order_placed→completed + orders(confirmed, payer)
-    P-->>W: 200 CheckoutSession completed + PAYMENT-RESPONSE {transaction}
-    W-->>A: {tx_hash, explorer_url, checkout (completed)}
-    A->>P: (optional) get_checkout / complete_checkout {x402_receipt tx_hash} → returns completed (idempotent)
-    Note over P,M: placement fails → refunding → failed; refund to payer recorded (simulated)
-```
-
----
-
 ## 15. Failure and refund handling; what's mocked
 
 | Failure | Where detected | State path | Money | Agent sees |
@@ -2394,23 +1973,18 @@ sequenceDiagram
 | Woo 5xx or timeout at quote | `woo()` | unchanged | none | `upstream_error` / `upstream_timeout` (502/504); retry with `update_checkout` |
 | Woo 4xx at quote (bad address…) | `woo()` | unchanged (annotate) | none | message `merchant_unavailable` with Woo's text |
 | Invalid shipping option | quote step 5 | unchanged | none | 400 `validation_error` |
-| Quote TTL passed | `expireIfDue` | `awaiting_payment → expired` | none | `canceled` + `quote_expired`; update/complete → 410 `gone`; pay route 403 |
+| Quote TTL passed | `expireIfDue` | `awaiting_payment → expired` | none | `canceled` + `quote_expired`; update/complete → 410 `gone` |
 | SPT declined | `authorize` | `awaiting_payment → awaiting_payment` | none (PI failed) | `payment_declined`; retry with a new token |
 | SPT `requires_action` (3DS) | `authorize` | `awaiting_payment → requires_action` (→ `failed` after the TTL) | PI canceled | `requires_escalation` + `payment_requires_action` (**mocked**) |
-| Concurrent complete or pay | payment lock RPC | unchanged | none | `payment_in_progress` (MCP/REST) / 403 (pay route) |
-| x402 invalid signature, insufficient funds or value mismatch | facilitator `/verify` | unchanged (lock expires in 120 s) | none | 402 with reason |
-| x402 settle fails | facilitator `/settle` | unchanged; `onSettleFailure` releases the lock | none | 402 |
-| Price drift at placement | `placeOrder` | `placing_order → refunding → failed` | SPT: PI **voided**; x402: refund **recorded (simulated)** | `canceled` + `order_failed_refunded` |
+| Concurrent completion requests | payment lock RPC | unchanged | none | `payment_in_progress` (MCP/REST) |
+| Price drift at placement | `placeOrder` | `placing_order → refunding → failed` | Stripe PaymentIntent **voided** | `canceled` + `order_failed_refunded` |
 | Woo `/checkout` 4xx/5xx | `placeOrder` | same as above | same | same |
 | Woo `/checkout` timeout, or cart already empty | `placeOrder` | stays `placing_order` (annotate, `error.code = placement_unknown`) | **held**; an SPT auth lapses in 7 days | `complete_in_progress` + `order_reconciling`. The operator checks Woo admin, then captures or voids manually |
 | Capture fails after the order is placed | `rail.capture` | stays `order_placed` (annotate, `error.code = capture_failed`); orders `failed` | PI uncaptured (lapses) | `completed` status with the error recorded (contract has no `order_placed → failed`; §17 CCR-W4-R2-4). The operator cancels the Woo order |
-| Handler crash after x402 settlement | pay route | `payment_authorized` persists | settled | `complete_checkout` with `x402_receipt` resumes `finalize` |
-| DB write fails in `onAfterSettle` | hook | the handler uses the `settledByNonce` fallback | settled | normal |
 | (stretch) Browser recipe selector miss or CAPTCHA at quote | `browserConnector.quote` | `quoting → handoff` (PDP link) | none | `requires_escalation` |
-| (stretch) CAPTCHA at browser submit | `browserConnector.placeOrder` | `placing_order → refunding → failed` | voided / simulated refund | `order_failed_refunded` |
+| (stretch) CAPTCHA at browser submit | `browserConnector.placeOrder` | `placing_order → refunding → failed` | authorization voided | `order_failed_refunded` |
 
 **Mocked or simulated** (always labeled `simulated: true` in event data or the `test_mode` message):
-- **x402 refunds:** state and event only (`payment.status = "refunded"`, `simulated_refund: true`). Stretch: a real USDC transfer back.
 - **3DS `requires_action`:** a canned transition. There is no challenge UI.
 - **The SPT issuer (buyer wallet):** the demo wallet mints SPTs with Stripe's seller-side **test helper**. It stands in for a Link agent wallet.
 - **"SPT-compatible" fallback:** `pm_card_visa` when `STRIPE_SPT_MODE=fallback`.
@@ -2431,7 +2005,7 @@ set -a; . ./.env.local; set +a
 
 | # | Milestone (target) | Acceptance test (all must pass) |
 |---|---|---|
-| M0 | Spikes (T+15) | §4 A and B pass criteria. `STRIPE_SPT_MODE` recorded; wallet ≥ 8 USDC. |
+| M0 | Stripe check (T+15) | §4 Stripe feasibility check passes. `STRIPE_SPT_MODE` records SPT or the labelled test fallback. |
 | M1 | Woo store up (T+60) | `infra/woo/setup.sh` prints the 3 OK lines. `infra/woo/smoke.sh` prints `PASS` against the **tunnel URL**. The Store API product list shows the Classic Hoodie at `"4400"`. |
 | M1b | Registrar shipped (T+60) | `/api/mcp` `tools/list` shows the 6 checkout tools. `create_checkout` for `$VID` returns `requires_escalation` + `continue_url` (never `not_implemented`). The same call with `line_items: [{"item": {"id": "sz:variant:$VID"}, "quantity": 1}]` gives the same result. No `agent_requests` rows are written by WS4 code (only WS3's `instrumentServer`). |
 | M2 | Woo quote + state machine + REST create/get/update (T+2h30) | (a) `POST $APP/api/v1/checkouts` with `$VID`, buyer and SF address → `ready_for_complete`, total `4900`, options `["0:flat_rate:1","0:flat_rate:2"]`. (b) Without buyer/address → `incomplete` with `missing_buyer`, `missing_address`. (c) `PUT …/{id}` `{"selected_shipping_option_id":"0:flat_rate:2"}` → total `5900` and an `awaiting_payment → awaiting_payment` "Re-quoted" event. (d) Same `Idempotency-Key` + same body → HTTP 200 and the same id; same key + a different body → 409 `idempotency_conflict`. (e) `checkout_events` rows have no email or street. (f) Out-of-stock mug → `canceled` + `out_of_stock`. (g) Every session has `links[0].type == "timeline"`. |
@@ -2440,17 +2014,14 @@ set -a; . ./.env.local; set +a
 | M4 | Cancel + expiry | Cancel a ready checkout → `canceled`. `update checkouts set expires_at = now() - interval '1 minute' where id = …` then `GET` → `state: expired`, and `PUT`/`complete` → **410 `gone`**. |
 | M5 | Handoff + scan-aware resolution | A variant from a non-allowlisted store → `state: handoff`, `status: requires_escalation`, `continue_url` on the store's host, `payment.handlers == []`. `complete_checkout` on it → 200 with `merchant_checkout_required` and no Stripe call. `resolveCheckoutConnector` unit cases: allowlisted Woo → `woo_store_api`; `best_method:"dom"` + recipe with `CHECKOUT_BROWSER_ENABLED` unset → `handoff`, set → `browser`; `computer_use`/`none` → `handoff`. |
 | M6 | MCP checkout tools via WS3 | MCP Inspector lists the 6 tools, with `destructiveHint: true` on `complete_checkout`. Claude Desktop, with the demo wallet connected and the prompt "find me a hoodie under $50 and buy it; ship to 1 Market St, San Francisco CA 94105, email ada@example.com", ends `completed` with a Woo order. |
-| M7 | x402 pay route (T+5h) | **(1) Unpaid call returns 402:** `curl -si -X POST $APP/api/v1/checkouts/$CID/pay/x402 -D /tmp/h.txt -o /tmp/r.txt; head -1 /tmp/h.txt` → `HTTP/1.1 402`. Decoding `PAYMENT-REQUIRED` gives `exact`, `eip155:84532`, `"8000000"` for the $8.00 sticker checkout, `payTo == $X402_PAY_TO`, `extra.paymentFlow == "upfront"`. **(2) Route key matches:** no `[x402] Request path … did not match` log line. **(3) Not payable → 403:** a `quoting` checkout gives `{"error":"checkout_not_payable:quoting"}`. **(4) Upfront works:** `agent-x402.ts` step 4 → 200 and `completed`. On an upfront error, set `X402_FLOW=authorization` and re-run. |
-| M8 | Demo wallet MCP | With `DEMO_WALLET_ENABLED=true`, Inspector lists `wallet_issue_spt` and `wallet_pay_x402`. With `DEMO_WALLET_ENABLED=false`, or `STRIPE_SECRET_KEY=sk_live_x`, the route returns 404. `wallet_pay_x402` with `pay_url=https://evil.example/pay` → error. `wallet_issue_spt` with the wrong amount → error. |
-| M9 | `scripts/agent-x402.ts` (T+6h) | Exits 0 and prints a BaseScan link to an 8.00 USDC transfer to `X402_PAY_TO`. The Woo order note contains the tx hash. The step 7 replay gets 403. |
-| M10 | Full rehearsal | Both rails from Claude Desktop in under 60 s each. The WS5 timeline shows every transition. Run it twice and record a video. |
+| M8 | Demo wallet MCP | With `DEMO_WALLET_ENABLED=true`, Inspector lists `wallet_issue_spt`. With `DEMO_WALLET_ENABLED=false`, or `STRIPE_SECRET_KEY=sk_live_x`, the route returns 404. `wallet_issue_spt` with the wrong amount → error. |
+| M10 | Full rehearsal | The Stripe path from the connected agent completes in under 60 s. The WS5 timeline shows every transition. Run it twice and record a video. |
 | S1 | Stretch: Woo admin mark-paid | With `WOO_CONSUMER_KEY` set, the order is `Processing` with the private note. |
-| S2 | Stretch: real x402 refund | A drift failure transfers USDC back. `simulated` is absent. |
 | S3 | Stretch: Agent Pay Woo plugin (07 §5.6) | Orders are placed with `payment_method: "shoperzero_agentpay"` and the plugin verifies the receipt. |
 | S4 | Stretch: `magento_guest` | Only on an allowlisted Magento sandbox we control; otherwise skip. |
 | S5 | Stretch: `browser` connector (§8.3) | (a) Take a scanned store with `best_method:"dom"` and a recipe (e.g. the Magento or custom demo store, **not allowlisted**), with `CHECKOUT_BROWSER_ENABLED=1` and Browserbase keys. `create_checkout` → `state: handoff` and `continue_url` = a live-view URL showing the cart or checkout page with the item. No form was submitted. The event log shows the replayed steps. (b) Our Woo store with its host in `CHECKOUT_BROWSER_HOSTS` → `ready_for_complete` with the extracted total = 4900. `complete_checkout` via SPT → Woo order placed through the UI with "Direct bank transfer". (c) A deliberately broken `add_to_cart` selector → Stagehand fallback succeeds or → handoff with the PDP link, within 60 s. |
 
-**Never cut:** the Woo connector plus one working rail, `create_checkout`, `complete_checkout`, and the M7-1 "unpaid call returns 402" test (if x402 ships). **Cut first:** S5, then S1–S4.
+**Never cut:** the Woo connector, Stripe test payments, `create_checkout` and `complete_checkout`. **Cut first:** S5, then the remaining stretch items. Milestone IDs are retained for cross-references; removed milestones are not requirements.
 
 ---
 
@@ -2474,12 +2045,12 @@ set -a; . ./.env.local; set +a
 | ID | Owner | Request | Why | If rejected |
 |---|---|---|---|---|
 | CCR-W4-R2-1 | WS1 (contracts `Store` + `rowToStore`) | Add `best_method: AccessMethod \| "none" \| null` and `dom_recipe: DomRecipe \| null` to `Store` (columns from DECISIONS A), returned by `getStoreById`. | `resolveCheckoutConnector` (§8.0) and the browser connector read them | WS4 reads the two columns with a local select in `connectors/index.ts` |
-| CCR-W4-R2-2 | WS1 (00 §4.7 env table; B13 union) | Add `STRIPE_SPT_MODE`, `X402_FLOW`, `DEMO_WALLET_MAX_USD`, `DEMO_WALLET_TOKEN`, `CHECKOUT_ALLOWED_DOMAINS`, `CHECKOUT_BROWSER_ENABLED`, `CHECKOUT_BROWSER_HOSTS`, `CHECKOUT_FORCE_HANDOFF` (dev only) to `EnvName` and `.env.example`. Also add `infra/woo/.env.woo` to `.gitignore`. | Spike outcome, safety allowlist, stretch toggles | Code defaults apply |
-| CCR-W4-R2-3 | WS1 (contracts `CheckoutPaymentRecord`) | Add optional internal fields `lock?: {rail, until}`, `mode?: "spt"\|"fallback"`, `network?: string`, `idempotency_key?: string`, `simulated_refund?: boolean`. | They are stored in the same `payment` jsonb (§7.1); typing avoids casts | WS4 keeps the local `WsPaymentRecord` intersection type |
+| CCR-W4-R2-2 | WS1 (00 §4.7 env table; B13 union) | Add `STRIPE_SPT_MODE`, `DEMO_WALLET_TOKEN`, `CHECKOUT_ALLOWED_DOMAINS`, `CHECKOUT_BROWSER_ENABLED`, `CHECKOUT_BROWSER_HOSTS`, `CHECKOUT_FORCE_HANDOFF` (dev only) to `EnvName` and `.env.example`. Also add `infra/woo/.env.woo` to `.gitignore`. | Spike outcome, safety allowlist, stretch toggles | Code defaults apply |
+| CCR-W4-R2-3 | WS1 (contracts `CheckoutPaymentRecord`) | Add optional internal fields `lock?: {rail, until}`, `mode?: "spt"\|"fallback"`, `idempotency_key?: string`. | They are stored in the same `payment` jsonb (§7.1); typing avoids casts | WS4 keeps the local `WsPaymentRecord` intersection type |
 | CCR-W4-R2-4 | WS1 (contracts `ALLOWED_TRANSITIONS`), optional | Add `order_placed → failed`, for capture failure after placement. | Status `completed` with a recorded error is misleading in the rare capture-failure case | WS4 annotates `order_placed` with `error.code = capture_failed` (§15) |
-| CCR-W4-R2-5 | WS1 (00 §6.6 `CheckoutEvent.data` comment) | Replace the comment's key list with the WS5 CCR-5 keys (B14): `rail, payment_intent_id, tx_hash, network, merchant_order_id, merchant_order_url, continue_url, amount, error_code, simulated`. | 00 still mentions `payment_intent` / `explorer_url` | WS4 writes the CCR-5 keys regardless |
+| CCR-W4-R2-5 | WS1 (00 §6.6 `CheckoutEvent.data` comment) | Replace the comment's key list with the WS5 CCR-5 keys (B14): `rail, payment_intent_id, merchant_order_id, merchant_order_url, continue_url, amount, error_code, simulated`. | 00 still mentions `payment_intent` / `explorer_url` | WS4 writes the CCR-5 keys regardless |
 | CCR-W4-R2-6 | WS1 (00 §6.8 registry) | Record that `create_checkout`/`update_checkout` accept the Shopify line-item alias `{item:{id}, quantity}` (WS4's `CreateCheckoutMcpInputSchema`/`UpdateCheckoutMcpInputSchema` extend the contract schemas). `MCP_TOOL_INPUTS` may point at the WS4 schemas or keep the strict ones for docs. | Coordinator item 2; Shopify UCP prompts work unchanged | WS4's registrar uses its extended schemas anyway; the contract schemas stay the REST shape |
-| CCR-W4-R2-7 | WS2 | After a scan, write `stores.checkout_connector = resolveCheckoutConnector(store)` (import from `@/lib/checkout/connectors`). A `dom_recipe` counts as "usable" when it has `add_to_cart` and one of `cart_link` / `checkout_link`; please fill `verified_at` when the DOM probe clicked through. | Honest `checkout_methods` display; browser connector input | WS4 resolves at checkout time anyway |
+| CCR-W4-R2-7 | WS2 | After a scan, write `stores.checkout_connector = resolveCheckoutConnector(store)` (import from `@/features/checkout/connectors`). A `dom_recipe` counts as "usable" when it has `add_to_cart` and one of `cart_link` / `checkout_link`; please fill `verified_at` when the DOM probe clicked through. | Honest `checkout_methods` display; browser connector input | WS4 resolves at checkout time anyway |
 | CCR-W4-R2-8 | WS1 (packages, stretch only) | When S5 starts: `npm i playwright-core @browserbasehq/stagehand@4.1.0` in one commit. | Browser connector | S5 is cut |
 
 ---
@@ -2490,17 +2061,13 @@ set -a; . ./.env.local; set +a
 |---|---|---|
 | The SPT test helper works on our account without extra preview enablement | M0 A1 | `STRIPE_SPT_MODE=fallback` (`pm_card_visa`) |
 | PI create with `payment_method_data[shared_payment_granted_token]` + `automatic_payment_methods{allow_redirects:never}` | M0 A2 | Drop `automatic_payment_methods`, or add `return_url` |
-| `paymentFlow: "upfront"` end-to-end on the x402.org facilitator | M7-4 | `X402_FLOW=authorization`, then the hand-rolled 402 route (02 §3) |
-| `onAfterSettle` `ctx.transportContext.request.path` is populated in the before-handler phase | M7-4 | `settledByNonce` + `finalizeX402Checkout(id, fallback)` |
-| `ExactEvmScheme` (client) accepts a viem `LocalAccount` | M8/M9 | `toClientEvmSigner(account)` |
-| `McpServer` type from `@/lib/mcp/types` matches mcp-handler 2.2.0 | M1b | `import type { McpServer } from "@modelcontextprotocol/server"` |
+| `McpServer` type from `@/infrastructure/mcp/types` matches mcp-handler 2.2.0 | M1b | `import type { McpServer } from "@modelcontextprotocol/server"` |
 | `z.union` of line-item shapes renders as usable JSON Schema (`anyOf`) in Claude/Inspector | M1b | Accept `item` only through a `z.preprocess` that maps it to `variant_id` before validation |
 | Store API: add-item with a bare variation id; exact stock error codes | M2 | Send the `variation` array; regex on codes |
 | Store API `expected_total` on `POST /checkout` | M3b | Our own GET /cart drift check (always on) |
 | `wordpress:cli-php8.3` tag; `wp wc tool run install_pages` | M1 | `wordpress:cli`; pages not needed for the Store API |
 | Woo admin order URL (HPOS vs legacy) | M3 | Switch the `merchant_order_url` template |
 | Woo `?add-to-cart={variation_id}` for handoff | M5 | `?add-to-cart={parent}&variation_id={id}` |
-| Circle faucet amount and limits | M0 B4 | Several requests or teammates; the $8 sticker checkout |
 | Browserbase live-view URL (name, lifetime, whether shareable with a buyer) | S5 | Handoff with the platform permalink/PDP (§8.2) and a screenshot of the filled cart in the event log |
 | Stagehand v4 `act`/`extract` API | S5 | Pure Playwright replay of recipe selectors; miss → handoff |
 | InstaWP/TasteWP plugin limits and wp-cli | only if §5.8 is used | Manual wp-admin steps |

@@ -1,0 +1,5 @@
+import { getMockService } from "@/features/checkout/runtime";
+import { body, context, route } from "@/features/checkout/http";
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  return route(async () => getMockService().completeCheckout((await params).id, await body(request), context(request)));
+}

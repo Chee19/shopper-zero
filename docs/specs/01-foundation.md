@@ -41,16 +41,16 @@ Prerequisites:
 package.json, package-lock.json            (install + scripts)
 .env.example                               (§9)
 src/proxy.ts                               (matcher only, §8)
-src/lib/supabase/admin.ts, client.ts, server.ts   (add <Database> generic, §6.1)
-src/lib/contracts/{primitives,api,catalog,store,crawl,scan,checkout,mcp,services,index}.ts   (spec 00 §5–§6, verbatim)
-src/lib/{errors,http,log,env}.ts           (§10)
-src/lib/money.ts, src/lib/slug.ts, src/lib/foundation.test.ts   (§7)
-src/lib/db/{index,client,selects,mappers,upsert-row,stores,crawl-runs,products,scans,checkouts,claims,metrics}.ts, types.gen.ts, upsert-row.test.ts   (§6)
+src/infrastructure/supabase/admin.ts, client.ts, server.ts   (add <Database> generic, §6.1)
+src/contracts/{primitives,api,catalog,store,crawl,scan,checkout,mcp,services,index}.ts   (spec 00 §5–§6, verbatim)
+src/shared/{errors,http,log,env}.ts           (§10)
+src/shared/money.ts, src/shared/slug.ts, tests/unit/foundation.test.ts   (§7)
+src/infrastructure/database/{index,client,selects,mappers,upsert-row,stores,crawl-runs,products,scans,checkouts,claims,metrics}.ts, types.gen.ts, upsert-row.test.ts   (§6)
 supabase/migrations/20260926010000_core.sql      (§4)
 supabase/seed.sql                          (§5)
-scripts/db-smoke.ts                        (§11)
+scripts/db/smoke.ts                        (§11)
 .gitignore                                 (add `infra/woo/.env.woo`, CCR-W4-R2-2)
-T+30 stubs handed to other streams: src/lib/crawl/{index,mcp-tools}.ts, src/lib/scan/index.ts, src/lib/checkout/{index,mcp-tools}.ts, src/lib/mcp/{result,types}.ts   (§3)
+T+30 stubs handed to other streams: src/features/crawl/{index,mcp-tools}.ts, src/features/scan/index.ts, src/features/checkout/{index,mcp-tools}.ts, src/infrastructure/mcp/{result,types}.ts   (§3)
 ```
 
 ---
@@ -69,8 +69,6 @@ Versions checked with `npm view <pkg> version` on 2026-09-26:
 | `mcp-handler` | 2.2.0 | WS3, WS4 | peers: `next >=13`, `@modelcontextprotocol/server ^2.0.0` |
 | `@modelcontextprotocol/server` | 2.1.0 | WS3, WS4 | fallback: `mcp-handler@1` + `@modelcontextprotocol/sdk@1.30.1` |
 | `stripe` | 22.6.2 | WS4 | preview endpoints via `fetch` + `Stripe-Version` |
-| `@x402/core`, `@x402/next`, `@x402/evm`, `@x402/fetch` | 2.27.0 | WS4 | `@x402/next` peer `next >=16.2.6` ✓; `@x402/paywall` is an **optional** peer (not installed). `@x402/core` pulls its own `zod@^3` (nested, harmless). |
-| `viem` | 2.56.9 | WS4 | `@x402/evm` needs `^2.48.11` |
 | `tsx` (dev) | 4.23.15 | WS1 tests, WS2/WS4 scripts | runs `.ts` scripts and `tsx --test` |
 | `@anthropic-ai/sdk` | 0.128.0 | WS2 scan (DOM recipe agent, computer-use probe) | **core since round 2** (was stretch). Peer `zod ^3.25 \|\| ^4` ✓ |
 | `playwright-core` | 1.63.0 | WS2 scan (`dom`, `computer_use`: drive a local browser or `connectOverCDP` to Browserbase) | **core**. No bundled browsers; node ≥ 20 |
@@ -84,7 +82,6 @@ Exact command (pin exact versions so the lockfile can't drift mid-hackathon):
 ```bash
 npm i --save-exact zod@4.6.5 cheerio@1.2.0 fast-xml-parser@5.11.1 robots-parser@3.0.1 p-queue@9.3.3 \
   mcp-handler@2.2.0 @modelcontextprotocol/server@2.1.0 stripe@22.6.2 \
-  @x402/core@2.27.0 @x402/next@2.27.0 @x402/evm@2.27.0 @x402/fetch@2.27.0 viem@2.56.9 \
   @anthropic-ai/sdk@0.128.0 playwright-core@1.63.0 @browserbasehq/sdk@2.21.0
 npm i -D --save-exact tsx@4.23.15 playwright@1.63.0
 # stretch, install only when asked: @mendable/firecrawl-js@4.41.0 @browserbasehq/stagehand@4.1.0 (Node >= 22.18)
@@ -102,15 +99,15 @@ Replace the `scripts` block in `package.json` with:
   "start": "next start",
   "lint": "eslint",
   "typecheck": "next typegen && tsc --noEmit",
-  "test": "tsx --test src/lib/foundation.test.ts src/lib/db/upsert-row.test.ts",
+  "test": "tsx --test tests/unit/foundation.test.ts tests/unit/database/upsert-row.test.ts",
   "test:unit": "tsx --test 'src/lib/**/__tests__/*.test.ts'",
   "crawl:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/crawl-smoke.ts",
   "db:start": "supabase start",
   "db:reset": "supabase db reset",
   "db:push": "supabase db push",
-  "db:types": "supabase gen types typescript --local > src/lib/db/types.gen.ts",
-  "db:types:remote": "supabase gen types typescript --linked > src/lib/db/types.gen.ts",
-  "db:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/db-smoke.ts"
+  "db:types": "supabase gen types typescript --local > src/infrastructure/database/types.gen.ts",
+  "db:types:remote": "supabase gen types typescript --linked > src/infrastructure/database/types.gen.ts",
+  "db:smoke": "node --env-file=.env.local --conditions=react-server --import tsx scripts/db/smoke.ts"
 }
 ```
 `test:unit` and `crawl:smoke` are WS2's (02 §13; WS2 owns `scripts/crawl-*.ts` and `scripts/scan-*.ts`). The quoted glob in `test:unit` is expanded by Node's test runner, which needs Node ≥ 21 (fine on the pinned 22). Other streams append their test files to `test` by asking WS1. `--conditions=react-server` lets scripts import modules that start with `import "server-only"`; the plain `server-only` package throws otherwise.
@@ -121,28 +118,28 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
 
 ## 3. T+30 contracts commit
 
-1. Create `src/lib/contracts/*.ts` **verbatim** from spec 00 §6.1–§6.8 (9 files including `scan.ts` from §6.5a), plus `index.ts` from spec 00 §5.
-2. Create `src/lib/{errors,http,log,env}.ts` from §10, and `money.ts` / `slug.ts` (+ tests) from §7.
-3. Create `src/lib/db/types.gen.ts` as a placeholder until §5.1 regenerates it:
+1. Create `src/contracts/*.ts` **verbatim** from spec 00 §6.1–§6.8 (9 files including `scan.ts` from §6.5a), plus `index.ts` from spec 00 §5.
+2. Create `src/shared/{errors,http,log,env}.ts` from §10, and `money.ts` / `slug.ts` (+ tests) from §7.
+3. Create `src/infrastructure/database/types.gen.ts` as a placeholder until §5.1 regenerates it:
    ```ts
    // PLACEHOLDER. Overwritten by `npm run db:types` (T+45). Never hand-edit the generated file.
    // eslint-disable-next-line @typescript-eslint/no-explicit-any
    export type Database = any;
    ```
-4. Create every `src/lib/db/*.ts` file from §6 with the **exact exported signatures** of spec 00 §6.10. Bodies may be `throw new AppError("not_implemented", "<fn>")` for now (read helpers first at T+45).
+4. Create every `src/infrastructure/database/*.ts` file from §6 with the **exact exported signatures** of spec 00 §6.10. Bodies may be `throw new AppError("not_implemented", "<fn>")` for now (read helpers first at T+45).
 5. Create these stubs. Ownership transfers on push.
    ```ts
-   // src/lib/mcp/types.ts  → WS3
+   // src/infrastructure/mcp/types.ts  → WS3
    import type { createMcpHandler } from "mcp-handler";
    export type McpServer = Parameters<Parameters<typeof createMcpHandler>[0]>[0];
    export type ToolRegistrar = (server: McpServer) => void;
    ```
-   `src/lib/mcp/result.ts` → WS3: verbatim from spec 00 §6.9.
+   `src/infrastructure/mcp/result.ts` → WS3: verbatim from spec 00 §6.9.
    ```ts
-   // src/lib/crawl/index.ts  → WS2 (replace bodies, keep names + types)
+   // src/features/crawl/index.ts  → WS2 (replace bodies, keep names + types)
    // STUB created by WS1 at T+30. Owned by WS2 from then on: replace bodies, keep signatures.
-   import type { ComputeReadinessFn, CrawlStoreFn, StartStoreCrawlFn, VerifyOfferFn } from "@/lib/contracts";
-   import { AppError } from "@/lib/errors";
+   import type { ComputeReadinessFn, CrawlStoreFn, StartStoreCrawlFn, VerifyOfferFn } from "@/contracts";
+   import { AppError } from "@/shared/errors";
 
    const notYet = (what: string) => new AppError("not_implemented", `${what} is not implemented yet`);
 
@@ -152,15 +149,15 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
    export const computeReadiness: ComputeReadinessFn = async () => { throw notYet("computeReadiness"); };
    ```
    ```ts
-   // src/lib/crawl/mcp-tools.ts  → WS2 (register index_store, get_crawl_status, scan_store, get_scan here)
-   import type { ToolRegistrar } from "@/lib/mcp/types";
+   // src/features/crawl/mcp-tools.ts  → WS2 (register index_store, get_crawl_status, scan_store, get_scan here)
+   import type { ToolRegistrar } from "@/infrastructure/mcp/types";
    export const registerCrawlTools: ToolRegistrar = () => {};
    ```
    ```ts
-   // src/lib/scan/index.ts  → WS2 (replace bodies, keep names + types)
+   // src/features/scan/index.ts  → WS2 (replace bodies, keep names + types)
    // STUB created by WS1 at T+30. Owned by WS2 from then on: replace bodies, keep signatures.
-   import type { RunScanFn, StartScanFn } from "@/lib/contracts";
-   import { AppError } from "@/lib/errors";
+   import type { RunScanFn, StartScanFn } from "@/contracts";
+   import { AppError } from "@/shared/errors";
 
    const notYet = (what: string) => new AppError("not_implemented", `${what} is not implemented yet`);
 
@@ -168,10 +165,10 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
    export const runScan: RunScanFn = async () => { throw notYet("runScan"); };
    ```
    ```ts
-   // src/lib/checkout/index.ts  → WS4 (replace bodies, keep names + types)
+   // src/features/checkout/index.ts  → WS4 (replace bodies, keep names + types)
    // STUB created by WS1 at T+30. Owned by WS4 from then on: replace bodies, keep signatures.
-   import type { CheckoutService } from "@/lib/contracts";
-   import { AppError } from "@/lib/errors";
+   import type { CheckoutService } from "@/contracts";
+   import { AppError } from "@/shared/errors";
 
    const notYet = (what: string) => new AppError("not_implemented", `${what} is not implemented yet`);
 
@@ -184,12 +181,12 @@ Exit check: `rm -rf node_modules && npm ci && npm run build` is green. Push `pac
    export const listCheckoutEvents: CheckoutService["listCheckoutEvents"] = async () => { throw notYet("listCheckoutEvents"); };
    ```
    ```ts
-   // src/lib/checkout/mcp-tools.ts  → WS4 (register the 6 checkout tools here)
-   import type { ToolRegistrar } from "@/lib/mcp/types";
+   // src/features/checkout/mcp-tools.ts  → WS4 (register the 6 checkout tools here)
+   import type { ToolRegistrar } from "@/infrastructure/mcp/types";
    export const registerCheckoutTools: ToolRegistrar = () => {};
    ```
 6. Add `supabase/migrations/20260926010000_core.sql` (§4) and `supabase/seed.sql` (§5). Change `src/proxy.ts` (§8) and `.env.example` (§9).
-7. `npm run build` → green. Push. Announce: **"contracts frozen; import from `@/lib/contracts`"**.
+7. `npm run build` → green. Push. Announce: **"contracts frozen; import from `@/contracts`"**.
 
 If `mcp-handler`'s types do not expose the callback parameter this way (UNVERIFIED), use `import type { McpServer } from "@modelcontextprotocol/server"` in `types.ts`. Nothing else changes.
 
@@ -211,7 +208,7 @@ Complete and runnable. It was applied on top of `init.sql` without errors, and i
 **UNVERIFIED:** the real Supabase `storage` schema (column set of `storage.buckets` on the hosted project) and whether the hosted migration role may create policies on `storage.objects`. The fallback is built in (a guarded block; the bucket works without the policies).
 
 Design notes (the "why" behind the SQL):
-- **Enumerated values** use named CHECK constraints that mirror the TS unions in `src/lib/contracts`. They are not Postgres enum types: the init tables already use `text`, and changing a CHECK in a later add-only migration is a two-line drop/add.
+- **Enumerated values** use named CHECK constraints that mirror the TS unions in `src/contracts`. They are not Postgres enum types: the init tables already use `text`, and changing a CHECK in a later add-only migration is a two-line drop/add.
 - **Product identity is `(store_id, handle)`.** The legacy unique `(store_id, url)` is dropped, so a URL change on re-crawl can't fail a whole batch; it is replaced by a non-unique index.
 - **`fts` generated column.** It needs immutable expressions, and `array_to_string` is only STABLE (checked: `provolatile = 's'`). A tiny `public.immutable_array_to_string` wrapper solves this.
 - **`upsert_product_batch(p_store_id, p_products jsonb, p_seen_at timestamptz)`** (WS2 CCR-1 semantics, B12):
@@ -238,7 +235,7 @@ Design notes (the "why" behind the SQL):
 -- 2026092602xxxx_<stream>_<what>.sql files.
 --
 -- Enumerated values are enforced with NAMED CHECK constraints (not Postgres enum
--- types). The TypeScript unions in src/lib/contracts are the source of truth; to
+-- types). The TypeScript unions in src/contracts are the source of truth; to
 -- add a value later: alter table ... drop constraint <name>, add constraint <name> check (...).
 
 -- =====================================================================
@@ -407,7 +404,7 @@ create index crawl_runs_store_created_idx on public.crawl_runs (store_id, create
 
 -- =====================================================================
 -- 4b. SCANS (scan and score, DECISIONS §A). One row = one ScanReport
--- (src/lib/contracts/scan.ts). Public read + Realtime: /scan/{id} follows it live.
+-- (src/contracts/scan.ts). Public read + Realtime: /scan/{id} follows it live.
 -- Written only by WS2 through db.upsertScan() (service role).
 -- =====================================================================
 create table public.scans (
@@ -457,7 +454,7 @@ create table public.checkouts (
   fulfillment jsonb,                                     -- CheckoutSession["fulfillment"]
   totals jsonb not null default '[]'::jsonb,             -- Total[]
   currency text,
-  total_minor bigint,                                    -- frozen once state = awaiting_payment (x402 price source)
+  total_minor bigint,                                    -- frozen once state = awaiting_payment
   connector_state jsonb not null default '{}'::jsonb,    -- e.g. {cart_token, woo_order_id}; NEVER exposed
   payment jsonb not null default '{}'::jsonb,            -- CheckoutPaymentRecord
   continue_url text,
@@ -482,7 +479,7 @@ create table public.checkout_events (
   from_state text,
   to_state text not null,
   message text,                                          -- human-readable, NO PII (public timeline)
-  data jsonb not null default '{}'::jsonb,               -- {payment_intent, tx_hash, merchant_order_id, ...}; NO PII
+  data jsonb not null default '{}'::jsonb,               -- {payment_intent_id, merchant_order_id, ...}; NO PII
   created_at timestamptz not null default now()
 );
 create index checkout_events_checkout_idx on public.checkout_events (checkout_id, id);
@@ -494,16 +491,16 @@ create table public.orders (
   merchant_order_id text,
   merchant_order_url text,
   status text not null,                                  -- placed | confirmed | failed | refunded
-  rail text not null,                                    -- stripe_spt | x402
-  payment_reference text,                                -- pi_... | 0x tx hash
-  payer text,                                            -- wallet address (x402)
+  rail text not null,                                    -- stripe_spt
+  payment_reference text,                                -- Stripe PaymentIntent id (pi_...)
+  payer text,                                            -- reserved, null for Stripe
   amount_minor bigint not null,
   currency text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint orders_checkout_id_key unique (checkout_id), -- one order per checkout = idempotency
   constraint orders_status_check check (status in ('placed', 'confirmed', 'failed', 'refunded')),
-  constraint orders_rail_check check (rail in ('stripe_spt', 'x402'))
+  constraint orders_rail_check check (rail = 'stripe_spt')
 );
 create index orders_store_idx on public.orders (store_id, created_at desc);
 
@@ -627,8 +624,8 @@ exception when insufficient_privilege then
 end $$;
 
 -- =====================================================================
--- 10. RPC: upsert_product_batch  (service role only; called by src/lib/db)
--- p_products: ProductUpsertRow[] as built by src/lib/db/upsert-row.ts (§6.4).
+-- 10. RPC: upsert_product_batch  (service role only; called by src/infrastructure/database)
+-- p_products: ProductUpsertRow[] as built by src/infrastructure/database/upsert-row.ts (§6.4).
 -- WS2 CCR-1 semantics (B12). Per product, in its own sub-block (one bad product
 -- never fails the batch):
 --   * upsert on (store_id, handle); an unchanged content_hash only bumps last_seen_at;
@@ -1111,7 +1108,7 @@ Local (Docker running):
 ```bash
 supabase start                     # first time only; prints the API URL + publishable/secret keys for .env.local
 npm run db:reset                   # = supabase db reset: init.sql + core.sql, then seed.sql
-npm run db:types                   # writes src/lib/db/types.gen.ts (overwrites the placeholder)
+npm run db:types                   # writes src/infrastructure/database/types.gen.ts (overwrites the placeholder)
 ```
 Remote (the shared hosted project; already linked, see `supabase/.temp/project-ref`):
 ```bash
@@ -1124,16 +1121,16 @@ Commit `types.gen.ts`. Regenerate it after every migration, from any stream, and
 
 ---
 
-## 6. `src/lib/db/**`
+## 6. `src/infrastructure/database/**`
 
-All files except `mappers.ts` and `upsert-row.ts` start with `import "server-only"`. `index.ts` re-exports everything, so other streams `import { getProduct } from "@/lib/db"`. The signatures are fixed by spec 00 §6.10.
+All files except `mappers.ts` and `upsert-row.ts` start with `import "server-only"`. `index.ts` re-exports everything, so other streams `import { getProduct } from "@/infrastructure/database"`. The signatures are fixed by spec 00 §6.10.
 
 ### 6.1 Client (`client.ts`) and typed Supabase clients
 ```ts
-// src/lib/db/client.ts
+// src/infrastructure/database/client.ts
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type { Database } from "./types.gen";
 
 let client: SupabaseClient<Database> | null = null;
@@ -1143,10 +1140,10 @@ export function db(): SupabaseClient<Database> {
 }
 ```
 ```ts
-// src/lib/supabase/admin.ts (change: add the Database generic)
+// src/infrastructure/supabase/admin.ts (change: add the Database generic)
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/db/types.gen";
+import type { Database } from "@/infrastructure/database/types.gen";
 
 export function createAdminClient() {
   return createClient<Database>(
@@ -1156,13 +1153,13 @@ export function createAdminClient() {
   );
 }
 ```
-Also add `<Database>` to `createBrowserClient` in `src/lib/supabase/client.ts` and to `createServerClient` in `server.ts` / `proxy.ts` (type-only change).
+Also add `<Database>` to `createBrowserClient` in `src/infrastructure/supabase/client.ts` and to `createServerClient` in `server.ts` / `proxy.ts` (type-only change).
 
 **Typed RPC gotcha.** The generated RPC arg types make defaulted params optional (`query_text?: string`). Pass `undefined` (omit the key) instead of `null` for "no filter". The SQL default (`null`) applies either way.
 
 ### 6.2 Select strings (`selects.ts`) and mappers (`mappers.ts`)
 ```ts
-// src/lib/db/selects.ts
+// src/infrastructure/database/selects.ts
 export const STORE_REF_SELECT =
   "stores!inner(id, slug, name, domain, platform, checkout_connector, opted_out)" as const;
 export const PRODUCT_SELECT =
@@ -1178,15 +1175,15 @@ export const SCAN_SELECT = "*" as const;
 
 `mappers.ts` (isomorphic; generated `Tables<"x">` rows are structurally assignable to the row interfaces):
 ```ts
-// src/lib/db/mappers.ts: row -> contract mappers. ISOMORPHIC (no server-only, no client import),
+// src/infrastructure/database/mappers.ts: row -> contract mappers. ISOMORPHIC (no server-only, no client import),
 // so WS5 client components can map rows they read with the browser client.
 // Row interfaces are structural and loose on purpose: generated Tables<"x"> rows are assignable.
 import type {
   AccessMethod, Availability, CheckoutConnectorId, CheckoutEvent, CheckoutEventData, CheckoutState,
   CrawlLogEntry, CrawlRun, DomRecipe, ExtractionSource, IndexedProduct, IndexedVariant, Order, PaymentRailId,
   Platform, ProductSummary, ScanReport, Store, StoreRef, StoreStrategy, StoreSummary, StoreUrls,
-} from "@/lib/contracts";
-import { PLATFORMS } from "@/lib/contracts";
+} from "@/contracts";
+import { PLATFORMS } from "@/contracts";
 
 export const iso = (ts: string): string => new Date(ts).toISOString();
 export const isoOrNull = (ts: string | null | undefined): string | null => (ts ? iso(ts) : null);
@@ -1508,13 +1505,13 @@ This module is the single place where `NormalizedProduct` becomes DB rows. Rules
 - Handles are made unique within a batch with a `-<6 hex>` suffix.
 
 ```ts
-// src/lib/db/upsert-row.ts: pure mapping NormalizedProduct -> upsert_product_batch payload row.
+// src/infrastructure/database/upsert-row.ts: pure mapping NormalizedProduct -> upsert_product_batch payload row.
 import { createHash } from "node:crypto";
 import {
   NormalizedProductSchema, type Availability, type NormalizedProduct, type NormalizedVariant,
-} from "@/lib/contracts";
-import { fromMinor } from "@/lib/money";
-import { shortHash, slugify } from "@/lib/slug";
+} from "@/contracts";
+import { fromMinor } from "@/shared/money";
+import { shortHash, slugify } from "@/shared/slug";
 
 /** One element of the p_products JSON array consumed by public.upsert_product_batch(). */
 export interface ProductUpsertRow {
@@ -1675,7 +1672,7 @@ export function dedupeHandles(rows: ProductUpsertRow[]): ProductUpsertRow[] {
 }
 ```
 ```ts
-// src/lib/db/upsert-row.test.ts
+// tests/unit/database/upsert-row.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildUpsertRow, dedupeHandles, variantKey } from "./upsert-row";
@@ -1724,7 +1721,7 @@ test("buildUpsertRow", () => {
 
 ---
 
-## 7. `src/lib/money.ts` and `src/lib/slug.ts` (isomorphic)
+## 7. `src/shared/money.ts` and `src/shared/slug.ts` (isomorphic)
 
 Behavior summary:
 
@@ -1737,7 +1734,7 @@ Behavior summary:
 | `rescaleMinor(amount, fromExp, c)` | Woo `prices.price` with `currency_minor_unit` → our exponent (`"115"`, 0, USD → 11500) |
 | `fromMinor(amount, c)` | `"25.00"` (Shopify strings, exact exponent digits, no grouping) |
 | `formatMoney(m, locale)` | UI display `"$45.00"` |
-| `acpPrice(m)` / `toX402Price(m)` | `"25.00 USD"` / `"$42.17"` (x402: USD only, throws otherwise) |
+| `acpPrice(m)` | `"25.00 USD"` |
 | `addMoney`, `multiplyMoney`, `sumMoney` | Throw on currency mismatch or a non-integer qty |
 | `slugify(s, max=80)` | NFKD, strip diacritics, lower-case, `[^a-z0-9]+` → `-`, trim dashes |
 | `shortHash(s)` | FNV-1a 32-bit, 8 hex (deterministic, not security) |
@@ -1746,9 +1743,9 @@ Behavior summary:
 | `handleFromUrl(url)` | Last meaningful path segment without `.html/.php/...`; generic segments (`product`, `index`, `p`…) fall back to query pairs (`?p=123` → `p-123`); else `product-<hash>`. Deterministic |
 
 ```ts
-// src/lib/money.ts
+// src/shared/money.ts
 // Isomorphic (server + client). All money in the app is integer minor units.
-import type { Money } from "@/lib/contracts";
+import type { Money } from "@/contracts";
 
 const exponentCache = new Map<string, number>();
 
@@ -1861,11 +1858,6 @@ export function acpPrice(m: Money): string {
   return `${fromMinor(m.amount, m.currency)} ${m.currency}`;
 }
 
-/** x402 price string for USDC: {4217,"USD"} -> "$42.17". Throws for non-USD (no FX in the MVP). */
-export function toX402Price(m: Money): string {
-  if (m.currency !== "USD") throw new Error(`x402 needs USD, got ${m.currency}`);
-  return `$${fromMinor(m.amount, "USD")}`;
-}
 
 export function addMoney(a: Money, b: Money): Money {
   if (a.currency !== b.currency) throw new Error(`currency mismatch ${a.currency}/${b.currency}`);
@@ -1882,7 +1874,7 @@ export function sumMoney(items: Money[], currency: string): Money {
 }
 ```
 ```ts
-// src/lib/slug.ts
+// src/shared/slug.ts
 // Isomorphic (server + client). No node:crypto so client components can import it.
 
 /** "Café Crème  Hoodie!" -> "cafe-creme-hoodie". Empty/unsluggable input -> "". */
@@ -1993,11 +1985,11 @@ export function handleFromUrl(url: string): string {
   return `product-${shortHash(url)}`;
 }
 ```
-Tests: save as `src/lib/foundation.test.ts` (money, slug and contract checks, including that every MCP input schema converts to JSON Schema). Runs with `npm test`.
+Tests: save as `tests/unit/foundation.test.ts` (money, slug and contract checks, including that every MCP input schema converts to JSON Schema). Runs with `npm test`.
 ```ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { acpPrice, currencyExponent, formatMoney, fromMinor, parsePrice, rescaleMinor, toMinor, toX402Price } from "./money";
+import { acpPrice, currencyExponent, formatMoney, fromMinor, parsePrice, rescaleMinor, toMinor } from "./money";
 import { handleFromUrl, normalizeStoreUrl, slugify, storeSlugFromDomain } from "./slug";
 import {
   CompleteCheckoutInputSchema, CreateCheckoutInputSchema, NormalizedProductSchema,
@@ -2034,8 +2026,6 @@ test("money", () => {
   assert.equal(fromMinor(-150, "USD"), "-1.50");
   assert.equal(formatMoney({ amount: 4500, currency: "USD" }), "$45.00");
   assert.equal(acpPrice({ amount: 2500, currency: "USD" }), "25.00 USD");
-  assert.equal(toX402Price({ amount: 4217, currency: "USD" }), "$42.17");
-  assert.throws(() => toX402Price({ amount: 1, currency: "EUR" }));
 });
 
 test("slug", () => {
@@ -2074,7 +2064,7 @@ test("contracts", () => {
     payment: { instruments: [{ handler_id: "app.shoperzero.stripe_spt", type: "card", credential: { type: "spt", token: "spt_123" } }] },
   }).success);
   assert.equal(CompleteCheckoutInputSchema.safeParse({
-    payment: { instruments: [{ handler_id: "app.shoperzero.x402", type: "x402", credential: { type: "x402_receipt", tx_hash: "0x12" } }] },
+    payment: { instruments: [{ handler_id: "app.shoperzero.stripe_spt", type: "card", credential: { type: "spt", token: "" } }] },
   }).success, false);
   assert.ok(SearchCatalogInputSchema.safeParse({ catalog: { query: "hoodie", filters: { price: { max: 5000 } } }, meta: { "ucp-agent": { profile: "https://a/p.json" }, extra: 1 } }).success);
   assert.ok(SearchCatalogInputSchema.safeParse({ catalog: {} }).success);
@@ -2101,7 +2091,7 @@ test("contracts", () => {
 Replace the file with the code below. The regex was tested against sample paths. Proxy runs on `/`, `/scan`, `/stores/x`, `/checkouts/x`, `/claim/x` and `/search`. It skips `/api/*`, `/s/*` (including `/s/x/.well-known/ucp`), `/.well-known/*`, `/llms.txt`, `/robots.txt`, `/openapi.json`, `/sitemap.xml`, `_next` assets and images.
 ```ts
 import type { NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/proxy";
+import { updateSession } from "@/infrastructure/supabase/proxy";
 
 export async function proxy(request: NextRequest) {
   return updateSession(request);
@@ -2167,16 +2157,7 @@ STRIPE_PREVIEW_VERSION=2026-04-22.preview
 # spt | fallback (pm_card_visa)
 STRIPE_SPT_MODE=spt
 
-# x402 on Base Sepolia (WS4)
-X402_NETWORK=eip155:84532
-X402_FACILITATOR_URL=https://x402.org/facilitator
-X402_PAY_TO=
-# upfront | authorization
-X402_FLOW=upfront
-# Demo buyer wallet: Base Sepolia TEST key only. Never a mainnet key.
-DEMO_WALLET_PRIVATE_KEY=
 DEMO_WALLET_ENABLED=false
-DEMO_WALLET_MAX_USD=$25
 DEMO_WALLET_TOKEN=
 
 # Checkout safety (WS4)
@@ -2206,13 +2187,13 @@ Mirror every non-empty value into Vercel (Production + Preview) before E−60.
 
 ---
 
-## 10. Shared helpers (`src/lib/errors.ts`, `http.ts`, `log.ts`, `env.ts`)
+## 10. Shared helpers (`src/shared/errors.ts`, `http.ts`, `log.ts`, `env.ts`)
 
 ```ts
-// src/lib/errors.ts  (isomorphic)
+// src/shared/errors.ts  (isomorphic)
 // Isomorphic. Throw AppError anywhere; route/tool wrappers turn it into the envelope.
 import { z } from "zod";
-import { API_ERROR_STATUS, type ApiErrorCode } from "@/lib/contracts";
+import { API_ERROR_STATUS, type ApiErrorCode } from "@/contracts";
 
 export class AppError extends Error {
   readonly code: ApiErrorCode;
@@ -2252,20 +2233,20 @@ export function toAppError(e: unknown): AppError {
 }
 ```
 ```ts
-// src/lib/http.ts  (server-only)
+// src/shared/http.ts  (server-only)
 import "server-only";
 import type { NextRequest } from "next/server";
 import type { z } from "zod";
-import type { ApiErrorBody } from "@/lib/contracts";
-import { AppError, toAppError } from "@/lib/errors";
-import { log } from "@/lib/log";
+import type { ApiErrorBody } from "@/contracts";
+import { AppError, toAppError } from "@/shared/errors";
+import { log } from "@/shared/log";
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "content-type, authorization, idempotency-key, ucp-agent, request-id, payment-signature, x-payment, mcp-session-id, mcp-protocol-version, last-event-id",
-  "Access-Control-Expose-Headers": "request-id, payment-required, payment-response, x-payment-response, mcp-session-id",
+    "content-type, authorization, idempotency-key, ucp-agent, request-id, mcp-session-id, mcp-protocol-version, last-event-id",
+  "Access-Control-Expose-Headers": "request-id, mcp-session-id",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -2348,9 +2329,9 @@ export function route<Ctx>(
 Route usage (every public route file):
 ```ts
 // src/app/api/v1/products/[id]/route.ts (WS3), illustrative
-import { route, json, preflight } from "@/lib/http";
-import { getProduct } from "@/lib/db";
-import { AppError } from "@/lib/errors";
+import { route, json, preflight } from "@/shared/http";
+import { getProduct } from "@/infrastructure/database";
+import { AppError } from "@/shared/errors";
 
 export const GET = route("products.get", async (_req, ctx: RouteContext<"/api/v1/products/[id]">, { requestId }) => {
   const { id } = await ctx.params;
@@ -2361,7 +2342,7 @@ export const GET = route("products.get", async (_req, ctx: RouteContext<"/api/v1
 export const OPTIONS = preflight;
 ```
 ```ts
-// src/lib/log.ts  (isomorphic)
+// src/shared/log.ts  (isomorphic)
 // One JSON line per event on stdout/stderr (Vercel captures both). Isomorphic but meant for server code.
 type Level = "debug" | "info" | "warn" | "error";
 type Fields = Record<string, unknown>;
@@ -2398,20 +2379,20 @@ export const log = {
 };
 ```
 ```ts
-// src/lib/env.ts  (server-only)
+// src/shared/env.ts  (server-only)
 import "server-only";
-import { AppError } from "@/lib/errors";
+import { AppError } from "@/shared/errors";
 
 export type EnvName =
   | "NEXT_PUBLIC_SUPABASE_URL" | "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" | "SUPABASE_SECRET_KEY"
   | "APP_URL" | "CRAWLER_USER_AGENT" | "CRAWL_MAX_PRODUCTS" | "ALLOW_PRIVATE_STORE_HOSTS" | "LOG_LEVEL"
   | "STRIPE_SECRET_KEY" | "STRIPE_PREVIEW_VERSION"
-  | "X402_NETWORK" | "X402_FACILITATOR_URL" | "X402_PAY_TO" | "DEMO_WALLET_PRIVATE_KEY" | "DEMO_WALLET_ENABLED"
+  | "DEMO_WALLET_ENABLED"
   | "WOO_DEMO_URL" | "WOO_CONSUMER_KEY" | "WOO_CONSUMER_SECRET"
   | "CRAWL_TIME_BUDGET_MS" | "CRAWL_MAX_CONCURRENT_RUNS" | "CRAWL_TIERS"
   | "ANTHROPIC_API_KEY" | "SCAN_MODEL" | "SCAN_MAX_CONCURRENT" | "SCAN_CU_ENABLED" | "SCAN_CU_MAX_STEPS"
   | "BROWSERBASE_API_KEY" | "BROWSERBASE_PROJECT_ID" | "JS_SHOP_FIXTURE_URL"
-  | "STRIPE_SPT_MODE" | "X402_FLOW" | "DEMO_WALLET_MAX_USD" | "DEMO_WALLET_TOKEN"
+  | "STRIPE_SPT_MODE" | "DEMO_WALLET_TOKEN"
   | "CHECKOUT_ALLOWED_DOMAINS" | "CHECKOUT_BROWSER_ENABLED" | "CHECKOUT_BROWSER_HOSTS" | "CHECKOUT_FORCE_HANDOFF"
   | "NEXT_PUBLIC_UI_MOCK"
   | "OPENAI_API_KEY" | "FIRECRAWL_API_KEY" | "CRON_SECRET";
@@ -2451,7 +2432,7 @@ export const flags = {
 
 ---
 
-## 11. `scripts/db-smoke.ts`
+## 11. `scripts/db/smoke.ts`
 
 Run with `npm run db:smoke`, against whatever `.env.local` points to: local by default, or remote if you swap the env.
 ```ts
@@ -2461,7 +2442,7 @@ import {
   db, getStoreBySlug, searchProducts, getProduct, lookupProducts, listStoreProducts,
   upsertStoreProducts, getPublicMetrics, logAgentRequest, getVariantsForCheckout,
   getScan, getLatestScanForStore, upsertScan, claimScan, supersedeScans, getIndexStats,
-} from "../src/lib/db";
+} from "../src/infrastructure/database";
 
 const HOODIE = "22222222-2222-4222-8222-222222222201";
 const HOODIE_S = "33333333-3333-4333-8333-333333333301";
@@ -2559,7 +2540,7 @@ main().catch((err) => { console.error(err); process.exit(1); });
 | 9 | RLS: writer RPC locked | `curl -s "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/rpc/upsert_product_batch" -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" -H "Content-Type: application/json" -d '{"p_store_id":"11111111-1111-4111-8111-111111111111","p_products":[]}'` | permission denied (401/403/404), never 200 |
 | 10 | Public reads work | `curl -s "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/product_variants?select=title&product_id=eq.22222222-2222-4222-8222-222222222201" -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"` | 3 rows |
 | 11 | Realtime publication | `psql … -c "select tablename from pg_publication_tables where pubname='supabase_realtime' order by 1;"` | includes `checkout_events`, `crawl_runs`, `scans`, `stores` |
-| 12 | Types generated | `npm run db:types && git diff --stat src/lib/db/types.gen.ts` | real `Database` type containing `product_variants`, `search_products`, `upsert_product_batch` |
+| 12 | Types generated | `npm run db:types && git diff --stat src/infrastructure/database/types.gen.ts` | real `Database` type containing `product_variants`, `search_products`, `upsert_product_batch` |
 | 13 | db helpers end to end | `npm run db:smoke` | `db-smoke OK` |
 | 14 | Proxy matcher | run the node snippet at the end of §8 | `PROXY` for UI paths, `skip` for every agent path |
 | 15 | Remote applied | `supabase db push` (then `supabase migration list`) | `20260926010000` present both locally and remotely |

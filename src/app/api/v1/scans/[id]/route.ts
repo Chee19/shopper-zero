@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { AppError } from "@/lib/errors";
-import { json, preflight, route } from "@/lib/http";
-import { getScanReport } from "@/lib/scan";
+import { AppError } from "@/shared/errors";
+import { json, preflight, route } from "@/shared/http";
+import { getScanReport } from "@/features/scan";
 
 export const OPTIONS = preflight;
 
