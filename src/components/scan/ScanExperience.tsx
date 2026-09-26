@@ -35,7 +35,7 @@ export function ScanExperience({
   const [rescan, setRescan] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null });
   const domain = store?.domain ?? domainOf(scan.url);
   const terminal = isScanTerminal(scan);
-  const now = useNow(!terminal || Boolean(run) || replayIndexing);
+  const now = useNow(!terminal);
 
   const indexing = Boolean(run) || replayIndexing;
   const phase = indexing ? "indexing" : scan.status === "failed" ? "failed" : scan.status === "done" ? "report" : "cascade";
@@ -84,7 +84,8 @@ export function ScanExperience({
         {scan.platform !== "unknown" ? <Chip tone="muted">{PLATFORM_LABELS[scan.platform] ?? scan.platform}</Chip> : null}
         {replay ? (
           <Chip tone="muted" dot>Replay · recorded {formatDate(replay.recorded_at)}</Chip>
-        ) : phase === "cascade" || (phase === "indexing" && run && run.status !== "succeeded" && run.status !== "failed") ? (
+        ) : phase === "cascade" ? (
+          // The indexing lane shows its own live/done pill from the lane's state.
           <LivePill mode={mode} />
         ) : null}
         <span className="font-mono text-[13px] tabular-nums text-ink-2" aria-label="Scan time">{elapsed(clockMs)}</span>
@@ -134,7 +135,7 @@ export function ScanExperience({
           replayFrames={null}
           demo={demo}
           replayStoreHref={null}
-          onRetry={() => void makeReady()}
+          onRetry={makeReady}
         />
       ) : null}
       {phase === "indexing" && !run && replay ? (
@@ -145,7 +146,10 @@ export function ScanExperience({
           replayFrames={replay.indexing.frames}
           demo={demo}
           replayStoreHref={replayStoreHref}
-          onRetry={() => setIndexKey((k) => k + 1)}
+          onRetry={async () => {
+            setIndexKey((k) => k + 1);
+            return null;
+          }}
         />
       ) : null}
     </div>

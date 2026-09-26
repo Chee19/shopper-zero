@@ -151,7 +151,13 @@ export async function getCheckoutView(id: string): Promise<{ checkout: CheckoutS
   } catch {
     checkout = null;
   }
-  const events = await svc.listCheckoutEvents(id).catch(() => db.listCheckoutEvents(id)).catch(() => []);
+  // The checkout service can throw synchronously (mock disabled), so await it inside try before falling back to the db.
+  let events: CheckoutEvent[] = [];
+  try {
+    events = await svc.listCheckoutEvents(id);
+  } catch {
+    events = await db.listCheckoutEvents(id).catch(() => []);
+  }
   return { checkout, events };
 }
 

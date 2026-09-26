@@ -17,6 +17,7 @@ export function AgentReadyCta({
   onMakeReady: () => Promise<CtaResult>;
 }) {
   const [pending, setPending] = useState(false);
+  const [started, setStarted] = useState(false); // navigation to ?run= is in flight: never POST a second crawl
   const [result, setResult] = useState<CtaResult>(null);
   const claimHref = slug ? `/claim/${slug}` : null;
 
@@ -35,6 +36,7 @@ export function AgentReadyCta({
     const r = await onMakeReady();
     setResult(r);
     setPending(false);
+    if (!r) setStarted(true);
   }
 
   const fixable = scan.best_method === "api" || scan.best_method === "dom";
@@ -66,8 +68,8 @@ export function AgentReadyCta({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={run} pending={pending} className="h-12 px-6 text-[15px]">
-              {pending ? "Starting…" : "Make it agent-ready"} {!pending ? <ArrowRight size={16} /> : null}
+            <Button onClick={run} pending={pending || started} className="h-12 px-6 text-[15px]">
+              {pending || started ? "Starting…" : "Make it agent-ready"} {!pending && !started ? <ArrowRight size={16} /> : null}
             </Button>
             {claimHref ? (
               <Link href={claimHref} className="text-[14px] text-ink-2 hover:text-ink hover:underline">Is this your store? Claim it</Link>
@@ -88,7 +90,7 @@ export function AgentReadyCta({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {claimHref ? <ButtonLink href={claimHref}>Claim this store</ButtonLink> : null}
-          <Button variant="secondary" onClick={run} pending={pending}>Try indexing anyway</Button>
+          <Button variant="secondary" onClick={run} pending={pending || started}>Try indexing anyway</Button>
         </div>
       </div>
       {errorBox}

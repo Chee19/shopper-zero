@@ -18,6 +18,7 @@ import { GradeTile } from "../ui/GradeTile";
 import { ArrowRight, Check } from "../ui/icons";
 import { Banner } from "../ui/States";
 import { cx } from "../ui/tone";
+import type { CtaResult } from "./AgentReadyCta";
 
 export function IndexingPanel({
   scan, initial, replayFrames, demo, replayStoreHref, onRetry,
@@ -28,9 +29,15 @@ export function IndexingPanel({
   demo: boolean;
   /** Replays only: store page to open when done (null outside mock mode when the real store doesn't exist). */
   replayStoreHref: string | null;
-  onRetry: () => void;
+  onRetry: () => Promise<CtaResult>;
 }) {
   const { run, store, mode } = useCrawlLane(initial, replayFrames);
+  const [retry, setRetry] = useState<{ pending: boolean; error: string | null }>({ pending: false, error: null });
+  const doRetry = async () => {
+    setRetry({ pending: true, error: null });
+    const r = await onRetry();
+    setRetry({ pending: false, error: r?.error ?? null });
+  };
   const isReplay = Boolean(replayFrames);
   const domain = store.domain || domainOf(scan.url);
   const maxProducts = demo ? 40 : null;
@@ -93,7 +100,10 @@ export function IndexingPanel({
         {run.status === "failed" ? (
           <div role="alert" className="mt-4 rounded-xl border border-bad/40 bg-bad/8 px-4 py-3 text-[14px]">
             Indexing failed{run.error ? `: ${run.error}` : "."}
-            <button type="button" onClick={onRetry} className="ml-2 text-accent-text hover:underline">Retry</button>
+            <button type="button" onClick={doRetry} disabled={retry.pending} className="ml-2 text-accent-text hover:underline disabled:opacity-60">
+              {retry.pending ? "Retrying…" : "Retry"}
+            </button>
+            {retry.error ? <span className="mt-1 block text-bad-text">{retry.error}</span> : null}
           </div>
         ) : null}
         {store.status === "blocked" ? (

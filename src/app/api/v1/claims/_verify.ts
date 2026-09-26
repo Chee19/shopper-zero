@@ -26,15 +26,38 @@ export async function checkDns(host: string, token: string): Promise<CheckResult
   };
 }
 
-/** <meta name="shoperzero-verify" content="<token>"> on https://<host>/. Only the stored host is fetched (SSRF guard). */
+const sameSite = (a: string, b: string) => a.replace(/^www\./, "") === b.replace(/^www\./, "");
+
+/**
+ * Fetches https://<host>/ following at most 3 redirects by hand, and only to https on the same site (www/apex), so a
+ * store can't bounce the verifier to another host or an internal address (SSRF guard, spec 05 §7.5).
+ */
+async function fetchHome(host: string): Promise<{ res: Response | null; reason?: string }> {
+  let url = new URL(`https://${host}/`);
+  for (let hop = 0; hop <= 3; hop++) {
+    const res = await fetch(url, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(8000),
+      headers: { "User-Agent": flags.crawlerUserAgent(), Accept: "text/html" },
+    }).catch(() => null);
+    if (!res) return { res: null, reason: "network error" };
+    if (res.status < 300 || res.status >= 400) return { res };
+    const location = res.headers.get("location");
+    if (!location) return { res };
+    const next = new URL(location, url);
+    if (next.protocol !== "https:" || !sameSite(next.hostname, host)) {
+      return { res: null, reason: `redirects off-site to ${next.protocol}//${next.hostname}` };
+    }
+    url = next;
+  }
+  return { res: null, reason: "too many redirects" };
+}
+
+/** <meta name="shoperzero-verify" content="<token>"> on https://<host>/. Only the stored host (or its www/apex) is fetched. */
 export async function checkMeta(host: string, token: string): Promise<CheckResult> {
-  const res = await fetch(`https://${host}/`, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(8000),
-    headers: { "User-Agent": flags.crawlerUserAgent(), Accept: "text/html" },
-  }).catch(() => null);
+  const { res, reason } = await fetchHome(host);
   if (!res?.ok) {
-    return { method: "meta_tag", ok: false, observed: [], hint: `Couldn't fetch https://${host}/ (${res?.status ?? "network error"}).` };
+    return { method: "meta_tag", ok: false, observed: [], hint: `Couldn't fetch https://${host}/ (${reason ?? res?.status ?? "network error"}).` };
   }
   const $ = cheerio.load((await res.text()).slice(0, 512_000));
   const observed = $(`meta[name="${META_NAME}"]`).map((_, el) => $(el).attr("content") ?? "").get();

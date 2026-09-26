@@ -82,11 +82,13 @@ export function useCheckoutFeed(opts: {
       setLive(next);
     };
 
-    const tick = async () => {
+    /** One poll. Resolves false when the server answered with an error, so the pill stops claiming "Live". */
+    const tick = async (): Promise<boolean> => {
       let id = latest.current.checkoutId;
       if (follow) {
         const r = await fetchJson<{ checkout_id: string | null }>("/api/v1/ui/checkouts/latest");
-        const newest = r.ok ? r.data.checkout_id : null;
+        if (!r.ok) return false;
+        const newest = r.data.checkout_id;
         if (newest && newest !== id) {
           // Follow mode: switch to the newer checkout as soon as it exists.
           id = newest;
@@ -94,21 +96,19 @@ export function useCheckoutFeed(opts: {
           set({ checkoutId: newest, checkout: null, events: [] });
         }
       }
-      if (!id) return;
+      if (!id) return true;
       const r = await fetchJson<UiCheckout>(`/api/v1/ui/checkouts/${id}`);
-      if (stopped || latest.current.checkoutId !== id || !r.ok) return;
+      if (!r.ok) return false;
+      if (stopped || latest.current.checkoutId !== id) return true;
       const cur = latest.current;
       set({ checkoutId: id, checkout: r.data.checkout ?? cur.checkout, events: mergeEvents(cur.events, r.data.events) });
+      return true;
     };
 
     const loop = async () => {
       while (!stopped) {
-        try {
-          await tick();
-          if (!stopped) setMode("live");
-        } catch {
-          if (!stopped) setMode("polling");
-        }
+        const ok = await tick().catch(() => false);
+        if (!stopped) setMode(ok ? "live" : "polling");
         if (!follow && isTerminal(latest.current.events)) {
           terminalAt ??= Date.now();
           if (Date.now() - terminalAt > LINGER_MS) return;

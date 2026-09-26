@@ -36,6 +36,14 @@ function check(method: ClaimMethod, host: string, token: string): Promise<CheckR
   return method === "dns_txt" ? checkDns(host, token) : checkMeta(host, token);
 }
 
+/** Re-verification for opt-out/opt-in/rotate: the requested method first, then the other one. */
+async function checkAny(preferred: ClaimMethod, host: string, token: string): Promise<CheckResult> {
+  const first = await check(preferred, host, token);
+  if (first.ok) return first;
+  const second = await check(preferred === "dns_txt" ? "meta_tag" : "dns_txt", host, token);
+  return second.ok ? second : first;
+}
+
 export const OPTIONS = preflight;
 
 export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) => {
@@ -53,6 +61,12 @@ export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) =>
       return json({ claim: view(store, claim) }, { requestId });
     }
     case "rotate": {
+      // Rotating un-verifies the store, so a verified claim can only be rotated by someone who still controls the domain.
+      const current = await db.getClaim(store.id);
+      if (current?.verified_at) {
+        const result = await checkAny(body.method, host, current.token);
+        if (!result.ok) throw new AppError("forbidden", "Re-verify the current token before generating a new one", { check: result });
+      }
       const claim = await db.upsertClaim(store.id, body.method);
       return json({ claim: view(store, claim) }, { requestId });
     }
@@ -62,6 +76,8 @@ export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) =>
       const result = await check(body.method, host, claim.token);
       if (!result.ok) return json({ claim: view(store, claim), check: result }, { requestId });
       if (!claim.verified_at) await db.markClaimVerified(store.id);
+      // Remember the method that actually verified (non-rotating update), so later re-checks use it.
+      if (claim.method !== result.method) await db.getOrCreateClaim(store.id, result.method);
       const fresh = (await db.getClaim(store.id)) ?? claim;
       return json({ claim: view(store, fresh), check: result }, { requestId });
     }
@@ -69,9 +85,10 @@ export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) =>
     case "opt_in": {
       const claim = await db.getClaim(store.id);
       if (!claim) throw new AppError("not_found", "Start the claim first");
-      const result = await check(body.method, host, claim.token);
+      const result = await checkAny(body.method, host, claim.token);
       if (!result.ok) throw new AppError("forbidden", "Re-verification failed", { check: result });
       if (!claim.verified_at) await db.markClaimVerified(store.id);
+      if (claim.method !== result.method) await db.getOrCreateClaim(store.id, result.method);
       await db.setStoreOptOut(store.id, body.action === "opt_out");
       const [freshStore, freshClaim] = await Promise.all([db.getStoreBySlug(store.slug), db.getClaim(store.id)]);
       return json({ claim: view(freshStore ?? store, freshClaim ?? claim), check: result }, { requestId });

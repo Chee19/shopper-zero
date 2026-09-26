@@ -23,12 +23,15 @@ export function usePlayhead(times: number[], enabled: boolean): { idx: number; s
   return { idx, startedAt, done: idx >= times.length - 1 && times.length > 0 };
 }
 
-/** A ticking wall clock; null on the server and first client render (keeps hydration stable). */
+/**
+ * Wall clock for relative times: null on the server and first client render (keeps hydration stable), set once after
+ * mount, and ticking every `everyMs` only while `active`.
+ */
 export function useNow(active: boolean, everyMs = 1000): number | null {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
-    if (!active) return;
     const first = setTimeout(() => setNow(Date.now()), 0);
+    if (!active) return () => clearTimeout(first);
     const t = setInterval(() => setNow(Date.now()), everyMs);
     return () => {
       clearTimeout(first);
