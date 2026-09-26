@@ -47,7 +47,7 @@ export function renderRootLlmsTxt({ base, stats, now, stores, checkoutLive, agen
       const scanSuffix = s.grade_before
         ? ` · scan grade ${s.grade_before}${s.best_method ? ` (best access: ${s.best_method})` : ""}`
         : "";
-      return `- [${mdInline(s.name ?? s.domain)}](${base}/s/${s.slug}/llms.txt): ${s.domain} · ${platformLabel(s.platform)} · ${s.product_count} products · ${checkoutLabel}${scanSuffix}`;
+      return `- [${mdInline(s.name ?? "") || mdInline(s.domain)}](${base}/s/${s.slug}/llms.txt): ${s.domain} · ${platformLabel(s.platform)} · ${s.product_count} products · ${checkoutLabel}${scanSuffix}`;
     });
 
   return `# ShoperZero
@@ -105,7 +105,7 @@ export interface StoreLlmsInput {
 
 export function renderStoreLlmsTxt({ base, store, products, agentCheckout, scan }: StoreLlmsInput): string {
   const s = store;
-  const name = mdInline(s.name ?? s.domain);
+  const name = mdInline(s.name ?? "") || mdInline(s.domain);
   const label = platformLabel(s.platform);
   const storeCheckoutLine = agentCheckout
     ? `Agents can buy headlessly through ShoperZero. create_checkout returns "ready_for_complete"; pay with a Stripe Shared Payment Token or x402 USDC (see payment.handlers).`

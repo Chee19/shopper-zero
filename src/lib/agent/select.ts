@@ -13,7 +13,7 @@ export function selectVariants(p: IndexedProduct, ref: string, selectedIn?: Sele
   const messages: UcpMessage[] = [];
   const all = [...p.variants].sort((a, b) => a.position - b.position);
   let selected = selectedIn?.length ? selectedIn : undefined;
-  const refVariant = all.find((v) => v.id === ref);
+  const refVariant = all.find((v) => v.id === ref.toLowerCase()); // uuids resolve case-insensitively
   if (!selected && refVariant) {
     const pairs = Object.entries(refVariant.options).map(([name, label]) => ({ name, label }));
     if (pairs.length === 0) return { selected: undefined, variantIds: [refVariant.id], messages };

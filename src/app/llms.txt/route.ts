@@ -1,4 +1,4 @@
-import { agentCheckoutFor, CHECKOUT_TOOLS_LIVE } from "@/lib/agent/checkout-status";
+import { agentCheckoutFor, checkoutLive } from "@/lib/agent/checkout-status";
 import { CACHE, ucpLinkHeader } from "@/lib/agent/http";
 import { logHit } from "@/lib/agent/log";
 import { listIndexedStores } from "@/lib/agent/stores";
@@ -15,7 +15,7 @@ export const GET = route("llms_txt", async (req, _ctx: unknown, { requestId }) =
     stats,
     now: new Date().toISOString(),
     stores,
-    checkoutLive: CHECKOUT_TOOLS_LIVE,
+    checkoutLive: checkoutLive(),
     agentCheckout: agentCheckoutFor,
   });
   logHit("llms_txt", { tool: "root", req });
