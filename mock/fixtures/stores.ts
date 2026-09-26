@@ -1,4 +1,5 @@
 import type { ReadinessCheck, ReadinessGrade, ReadinessReport, Store, StoreUrls } from "@/components/lib/contracts";
+import { MCP_PATH } from "@/lib/formats/ucp";
 
 export const MOCK_APP_URL = "http://localhost:3000";
 export const MOCK_WOO_URL = "https://demo-woo.example.com";
@@ -11,7 +12,7 @@ export function storeUrls(slug: string, base: string): StoreUrls {
     llms_txt: `${base}/s/${slug}/llms.txt`,
     feed: `${base}/s/${slug}/feed.acp.jsonl`,
     ucp: `${base}/s/${slug}/.well-known/ucp`,
-    mcp: `${base}/api/mcp`,
+    mcp: `${base}${MCP_PATH}`,
   };
 }
 

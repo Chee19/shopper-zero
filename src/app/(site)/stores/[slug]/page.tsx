@@ -64,7 +64,7 @@ export default async function StorePage(props: PageProps<"/stores/[slug]">) {
             <Banner tone="bad">The last indexing run failed. Re-scan to try again.</Banner>
           ) : null}
 
-          <AgentSurfaces store={store} mcpUrl={agentMcpUrl()} />
+          <AgentSurfaces store={store} />
           <ConnectAgent appUrl={base} mcpUrl={agentMcpUrl()} />
 
           <section aria-labelledby="products">

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { claimInstructions, type CheckResult, type ClaimView } from "@/components/claim/types";
 import type { ClaimMethod, Store, StoreClaim } from "@/lib/contracts";
-import { AppError } from "@/lib/errors";
+import { AppError, isAppError } from "@/lib/errors";
 import { json, parseJsonBody, preflight, route } from "@/lib/http";
 import { UI_MOCK } from "@/components/lib/flags";
 import { MOCK_CLAIM_TOKEN, mockClaimView } from "@/app/(site)/_lib/mock";
@@ -44,15 +44,6 @@ async function checkAny(preferred: ClaimMethod, host: string, token: string): Pr
   return second.ok ? second : first;
 }
 
-/**
- * Guards markClaimVerified (which updates by store_id only) against a rotate that landed during a slow check.
- * Narrows the race; closing it fully needs a token-conditional markClaimVerified in WS1's helpers.
- */
-async function tokenUnchanged(storeId: string, token: string): Promise<boolean> {
-  const { getClaim } = await import("@/lib/db");
-  return (await getClaim(storeId))?.token === token;
-}
-
 export const OPTIONS = preflight;
 
 export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) => {
@@ -81,11 +72,17 @@ export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) =>
       if (!claim) throw new AppError("not_found", "Start the claim first");
       const result = await check(body.method, host, claim.token);
       if (!result.ok) return json({ claim: view(store, claim), check: result }, { requestId });
-      if (!(await tokenUnchanged(store.id, claim.token))) {
-        const fresh = (await db.getClaim(store.id)) ?? claim;
-        return json({ claim: view(store, fresh), check: { ...result, ok: false, hint: "The token changed while we checked. Publish the new token and verify again." } }, { requestId });
+      if (!claim.verified_at) {
+        try {
+          // Token-conditional: a rotate that landed during the check makes this throw `conflict`.
+          await db.markClaimVerified(store.id, claim.token);
+        } catch (e) {
+          if (!(isAppError(e) && e.code === "conflict")) throw e;
+          const fresh = (await db.getClaim(store.id)) ?? claim;
+          const hint = "The token changed while we checked. Publish the new token and verify again.";
+          return json({ claim: view(store, fresh), check: { ...result, ok: false, hint } }, { requestId });
+        }
       }
-      if (!claim.verified_at) await db.markClaimVerified(store.id);
       // Remember the method that actually verified (non-rotating update), so later re-checks use it.
       if (claim.method !== result.method) await db.getOrCreateClaim(store.id, result.method);
       const fresh = (await db.getClaim(store.id)) ?? claim;
@@ -97,8 +94,7 @@ export const POST = route<unknown>("claims", async (req, _ctx, { requestId }) =>
       if (!claim) throw new AppError("not_found", "Start the claim first");
       const result = await checkAny(body.method, host, claim.token);
       if (!result.ok) throw new AppError("forbidden", "Re-verification failed", { check: result });
-      if (!(await tokenUnchanged(store.id, claim.token))) throw new AppError("conflict", "The claim token changed; verify again");
-      if (!claim.verified_at) await db.markClaimVerified(store.id);
+      if (!claim.verified_at) await db.markClaimVerified(store.id, claim.token); // conflict (409) if rotated mid-check
       if (claim.method !== result.method) await db.getOrCreateClaim(store.id, result.method);
       await db.setStoreOptOut(store.id, body.action === "opt_out");
       const [freshStore, freshClaim] = await Promise.all([db.getStoreBySlug(store.slug), db.getClaim(store.id)]);
