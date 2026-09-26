@@ -67,10 +67,11 @@ test("browser: purchase, repeat completion and reopen saved receipt; records a b
     assert.equal(await page.getByRole("region", { name: "Order details" }).innerText(), before);
     await page.getByRole("link", { name: "View checkout →" }).click();
     await page.waitForURL(`**/checkouts/${done.id}`);
-    await page.getByRole("heading", { name: "Purchase complete", exact: true }).waitFor();
+    await page.getByText(/Agent checkout complete/).waitFor();
     await page.reload();
-    await page.getByRole("heading", { name: "Purchase complete", exact: true }).waitFor();
-    assert.ok((await page.getByRole("region", { name: "Order details" }).innerText()).includes(done.order.payment.reference));
+    await page.getByText(/Agent checkout complete/).waitFor();
+    assert.ok((await page.locator("body").innerText()).includes(done.order.payment.reference));
+    await page.getByText(`Merchant order #${done.order.merchant_order_id}`, { exact: true }).waitFor();
     await page.waitForTimeout(1500);
     assert.equal(await page.locator("[data-nextjs-dialog]").count(), 0);
     verify();
@@ -143,9 +144,10 @@ test("browser: a purchase completed externally updates the open checkout and tim
   try {
     await page.goto(`${base}/demo/checkout`);
     const created = await start(page, "success");
-    await page.getByRole("link", { name: "View checkout →", exact: true }).click();
-    await page.waitForURL(`**/checkouts/${created.id}`);
-    await page.getByRole("button", { name: "Confirm purchase · $32.93", exact: true }).waitFor();
+    const timeline = await context.newPage(); const verifyTimeline = await monitor(context, timeline);
+    await timeline.goto(`${base}/checkouts/${created.id}`);
+    await timeline.getByRole("list", { name: "Checkout events", exact: true }).waitFor();
+    assert.equal(await timeline.getByText(/Agent checkout complete/).count(), 0);
     const response = await context.request.post(`${base}/api/v1/checkouts/${created.id}/complete`, {
       headers: { "Idempotency-Key": crypto.randomUUID() },
       data: { payment: { instruments: [{ handler_id: "app.shoperzero.stripe_spt", type: "card", credential: { type: "spt", token: "mock_card_visa" } }] } },
@@ -155,7 +157,9 @@ test("browser: a purchase completed externally updates the open checkout and tim
     await page.getByRole("heading", { name: "Purchase complete", exact: true }).waitFor({ timeout: 6000 });
     await page.getByText("Payment captured; order confirmed", { exact: true }).waitFor();
     assert.ok((await page.getByRole("region", { name: "Order details" }).innerText()).includes(done.order.merchant_order_id));
-    verify();
+    await timeline.getByText(/Agent checkout complete/).waitFor({ timeout: 6000 });
+    await timeline.getByText(`Merchant order #${done.order.merchant_order_id}`, { exact: true }).waitFor();
+    verify(); verifyTimeline();
   } finally { await context.close(); }
 });
 
