@@ -1,26 +1,81 @@
 @import "tailwindcss";
 
+/* --muted is darker than spec 05 §8.3's #8a8880 in light mode so small muted text keeps >= 4.5:1 on --page (§8.5). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --page: #f7f6f2;  --surface: #fdfcf9;  --well: #efede7;
+  --ink: #0c0c0b;   --ink-2: #4f4e4a;    --muted: #6f6d66;
+  --line: rgb(12 12 11 / 0.09);          --grid: #e2e0d8;
+  --accent: #2f6bff; --accent-ink: #ffffff;
+  --good: #11a34a; --good-2: #7cb518; --warn: #f5a524; --serious: #ec835a; --bad: #e5484d;
+  --code-bg: #141413; --code-ink: #e9e8e2;
+  /* status text on tinted chips: darker in light mode for >= 4.5:1 */
+  --good-text: #0a7433; --good-2-text: #4d7410; --warn-text: #8f5a00; --serious-text: #a9471f; --bad-text: #c0272d; --accent-text: #2456d3;
+  --shadow: 0 1px 2px rgb(12 12 11 / .04), 0 18px 40px -22px rgb(12 12 11 / .18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0b0b0a; --surface: #161614; --well: #1f1f1c;
+    --ink: #f4f3ee;  --ink-2: #c3c2b7;   --muted: #8a8880;
+    --line: rgb(255 255 255 / 0.09);     --grid: #2c2c2a;
+    --accent: #5b8cff; --code-bg: #0b0b0a;
+    --good-text: var(--good); --good-2-text: var(--good-2); --warn-text: var(--warn); --serious-text: var(--serious); --bad-text: #ff6b70; --accent-text: var(--accent);
+    --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 18px 40px -22px rgb(0 0 0 / .7);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0b0b0a; --surface: #161614; --well: #1f1f1c;
+  --ink: #f4f3ee;  --ink-2: #c3c2b7;   --muted: #8a8880;
+  --line: rgb(255 255 255 / 0.09);     --grid: #2c2c2a;
+  --accent: #5b8cff; --code-bg: #0b0b0a;
+  --good-text: var(--good); --good-2-text: var(--good-2); --warn-text: var(--warn); --serious-text: var(--serious); --bad-text: #ff6b70; --accent-text: var(--accent);
+  --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 18px 40px -22px rgb(0 0 0 / .7);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-page: var(--page);    --color-surface: var(--surface); --color-well: var(--well);
+  --color-ink: var(--ink);      --color-ink-2: var(--ink-2);     --color-muted: var(--muted);
+  --color-line: var(--line);    --color-grid: var(--grid);
+  --color-accent: var(--accent); --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good); --color-good-2: var(--good-2); --color-warn: var(--warn);
+  --color-serious: var(--serious); --color-bad: var(--bad);
+  --color-code: var(--code-bg); --color-code-ink: var(--code-ink);
+  --color-good-text: var(--good-text); --color-good-2-text: var(--good-2-text); --color-warn-text: var(--warn-text);
+  --color-serious-text: var(--serious-text); --color-bad-text: var(--bad-text); --color-accent-text: var(--accent-text);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-instrument), Georgia, serif;   /* next/font var is --font-instrument (avoids a self-reference) */
+  --radius-card: 18px;
+  --shadow-card: var(--shadow);
+  --animate-shimmer: shimmer 1.2s linear infinite;
+  --animate-pulse-dot: pulse-dot 1.3s ease-in-out infinite;
+  --animate-flip-in: flip-in 600ms cubic-bezier(.2,.7,.2,1) both;
+  --animate-rise: rise 350ms ease both;
+  --animate-fade: fade 200ms ease both;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+@keyframes shimmer   { from { background-position: 100% 0 } to { background-position: -150% 0 } }
+@keyframes pulse-dot { 50% { opacity: .35 } }
+@keyframes flip-in   { from { transform: perspective(400px) rotateX(90deg); opacity: 0 } }
+@keyframes rise      { from { transform: translateY(4px); opacity: 0 } }
+@keyframes fade      { from { opacity: 0 } }
+@keyframes beam      { to { transform: rotate(360deg) } }
+@keyframes ring-fill { from { stroke-dashoffset: var(--ring-len) } }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+body { background: var(--page); color: var(--ink); font-family: var(--font-sans); font-size: 15px; line-height: 1.5; }
+.shimmer-bar {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 25%, transparent) 0 30%, var(--accent) 50%,
+              color-mix(in srgb, var(--accent) 25%, transparent) 70% 100%);
+  background-size: 250% 100%;
 }
+.eyebrow { font-size: 11.5px; line-height: 1.3; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 560; }
+.hero-beam {
+  position: absolute; left: 50%; top: -260px; width: 900px; height: 900px; margin-left: -450px;
+  pointer-events: none; opacity: .45; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 62%, color-mix(in srgb, var(--accent) 30%, transparent) 75%, transparent 88%);
+  filter: blur(60px); animation: beam 16s linear infinite;
+}
+dialog::backdrop { background: rgb(0 0 0 / .65); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
